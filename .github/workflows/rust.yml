@@ -212,7 +212,7 @@ jobs:
       - name: Archive artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NetLink
+          name: NetLink-${{ matrix.TARGET }}
           path: |
             ./artifacts/*
   # deploys to github releases on tag
