@@ -91,7 +91,7 @@ pub async fn main() -> Result<()> {
     let shutdown_writer = writer.clone();
     let device_r = device.clone();
     tokio::spawn(async move {
-        tun_recv(writer, device_r).await.unwrap();
+        tun_recv(writer, device_r, self_id).await.unwrap();
     });
     log::info!("listen local port: {port}");
 
@@ -139,7 +139,11 @@ async fn recv(mut line: PipeLine, device: Arc<AsyncDevice>) {
         }
     }
 }
-async fn tun_recv(pipe_writer: PipeWriter, device: Arc<AsyncDevice>) -> Result<()> {
+async fn tun_recv(
+    pipe_writer: PipeWriter,
+    device: Arc<AsyncDevice>,
+    _self_id: Ipv4Addr,
+) -> Result<()> {
     let mut buf = [0; 2000];
     let mut send_packet = SendPacket::with_capacity(2000);
 
