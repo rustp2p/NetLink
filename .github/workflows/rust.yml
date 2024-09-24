@@ -205,7 +205,8 @@ jobs:
             TAG=$GITHUB_SHA
           fi
           mv ./target/$TARGET/release/$EXEC_NetLink ./artifacts/$EXEC_NetLink
-          tar -czf ./artifacts/NetLink-$TARGET-$TAG.tar.gz $EXEC_NetLink
+          tar -czf ./artifacts/NetLink-$TARGET-$TAG.tar.gz ./artifacts/$EXEC_NetLink
+          rm -rf ./artifacts/$EXEC_NetLink
       - name: List target NetLink
         run: find ./artifacts
       - name: Archive artifact
