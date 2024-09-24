@@ -13,6 +13,10 @@ pnet_packet = "0.35.0"
 ctrlc2 = { version = "3", features = ["tokio", "termination"] }
 tokio = { version = "1.39.2", features = ["full"] }
 
+
+[features]
+default = []
+
 [profile.release]
 opt-level = 'z'
 debug = 0
