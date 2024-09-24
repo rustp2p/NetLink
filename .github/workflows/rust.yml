@@ -1,0 +1,242 @@
+name: Rust
+
+on:
+  push:
+    tags:
+      - '*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    # necessary for windows
+    shell: bash
+
+jobs:
+  #  test:
+  #    runs-on: ubuntu-latest
+  #    steps:
+  #      - uses: actions/checkout@v2
+  #      - name: Init submodules
+  #        uses: snickerbockers/submodules-init@v4
+  #      - name: Cargo cache
+  #        uses: actions/cache@v2
+  #        with:
+  #          path: |
+  #            ~/.cargo/registry
+  #            ./target
+  #          key: test-cargo-registry
+  #      - name: List
+  #        run: find ./
+  #      - name: Run tests
+  #        run: cargo test --verbose
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        # a list of all the targets
+        include:
+          - TARGET: i686-unknown-linux-musl # test in an alpine container on a mac
+            OS: ubuntu-latest
+            FEATURES: default
+          - TARGET: x86_64-unknown-linux-musl # test in an alpine container on a mac
+            OS: ubuntu-latest
+            FEATURES: default
+          - TARGET: aarch64-unknown-linux-musl # tested on aws t4g.nano in alpine container
+            OS: ubuntu-latest
+            FEATURES: default
+          - TARGET: armv7-unknown-linux-musleabihf # raspberry pi 2-3-4, not tested
+            OS: ubuntu-latest
+            FEATURES: default
+          - TARGET: armv7-unknown-linux-musleabi # raspberry pi 2-3-4, not tested
+            OS: ubuntu-latest
+            FEATURES: default
+          - TARGET: arm-unknown-linux-musleabihf # raspberry pi 0-1, not tested
+            OS: ubuntu-latest
+            FEATURES: default
+          - TARGET: arm-unknown-linux-musleabi # raspberry pi 0-1, not tested
+            OS: ubuntu-latest
+            FEATURES: default
+          - TARGET: x86_64-apple-darwin # tested on a mac, is not properly signed so there are security warnings
+            OS: macos-latest
+            FEATURES: default
+          - TARGET: aarch64-apple-darwin # tested on a mac, is not properly signed so there are security warnings
+            OS: macos-latest
+            FEATURES: default
+          - TARGET: i686-pc-windows-msvc # tested on a windows machine
+            OS: windows-2019
+            FEATURES: default
+          - TARGET: x86_64-pc-windows-msvc # tested on a windows machine
+            OS: windows-latest
+            FEATURES: default
+          - TARGET: mipsel-unknown-linux-musl # openwrt
+            OS: ubuntu-latest
+            FEATURES: default
+          - TARGET: mips-unknown-linux-musl # openwrt
+            OS: ubuntu-latest
+            FEATURES: default
+    # needs: test
+    runs-on: ${{ matrix.OS }}
+    env:
+      NAME: NetLink # change with the name of your project
+      TARGET: ${{ matrix.TARGET }}
+      OS: ${{ matrix.OS }}
+      FEATURES: ${{ matrix.FEATURES }}
+    steps:
+      - uses: actions/checkout@v2
+      - name: Init submodules
+        uses: snickerbockers/submodules-init@v4
+      - name: Cargo cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ./target
+          key: build-cargo-registry-${{matrix.TARGET}}
+      - name: Use strawberry perl
+        if: startsWith(matrix.os, 'windows')
+        run: echo OPENSSL_SRC_PERL=C:/Strawberry/perl/bin/perl >> $GITHUB_ENV
+      - name: List
+        run: find ./
+      - name: Install and configure dependencies
+        run: |
+          # dependencies are only needed on ubuntu as that's the only place where
+          # we make cross-compilation
+          rustup set auto-self-update disable
+          
+          if [[ $OS =~ ^ubuntu.*$ ]]; then
+            sudo apt-get update && sudo apt-get install clang llvm libc6-dev-i386 crossbuild-essential-arm64 crossbuild-essential-armhf musl-tools libboost-all-dev libc6-dev -y
+            #  curl -s musl.cc | grep mipsel
+            case $TARGET in 
+              mipsel-unknown-linux-musl)
+                MUSL_URI=mipsel-linux-musl-cross
+                ;;
+              aarch64-unknown-linux-musl)
+                MUSL_URI=aarch64-linux-musl-cross
+                ;;
+              armv7-unknown-linux-musleabihf)
+                MUSL_URI=armv7l-linux-musleabihf-cross
+                ;;    
+              armv7-unknown-linux-musleabi)
+                MUSL_URI=armv7m-linux-musleabi-cross
+                ;;   
+              arm-unknown-linux-musleabihf)
+                MUSL_URI=arm-linux-musleabihf-cross
+                ;;    
+              arm-unknown-linux-musleabi)
+                MUSL_URI=arm-linux-musleabi-cross
+                ;;        
+              mips-unknown-linux-musl)
+                MUSL_URI=mips-linux-musl-cross
+                ;;
+            esac
+          
+            if [[ $TARGET =~ ^mips.*$ ]]; then
+              # mips平台使用1.71.1版本
+              rustup install 1.71.1
+              rustup default 1.71.1  
+            else
+              rustup install 1.77
+              rustup default 1.77
+            fi
+          
+            if [  -n "$MUSL_URI" ]; then
+              mkdir -p ./musl_gcc 
+              wget -c https://musl.cc/$MUSL_URI.tgz -P ./musl_gcc/
+              tar zxf ./musl_gcc/$MUSL_URI.tgz -C ./musl_gcc/
+              sudo ln -s $(pwd)/musl_gcc/$MUSL_URI/bin/*gcc /usr/bin/
+            fi
+          else
+            rustup install 1.77
+            rustup default 1.77 
+          fi
+          rustup -V
+          
+          # some additional configuration for cross-compilation on linux
+          cat >>~/.cargo/config <<EOF
+          [target.x86_64-unknown-linux-musl]
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]
+          [target.aarch64-unknown-linux-musl]
+          linker = "aarch64-linux-musl-gcc"
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]
+          [target.armv7-unknown-linux-musleabihf]
+          linker = "armv7l-linux-musleabihf-gcc"
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]
+          [target.armv7-unknown-linux-musleabi]
+          linker = "armv7m-linux-musleabi-gcc"
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]
+          [target.arm-unknown-linux-musleabihf]
+          linker = "arm-linux-musleabihf-gcc"
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]   
+          [target.arm-unknown-linux-musleabi]
+          linker = "arm-linux-musleabi-gcc"
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]
+          [target.mipsel-unknown-linux-musl]
+          linker = "mipsel-linux-musl-gcc"
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]
+          [target.mips-unknown-linux-musl]
+          linker = "mips-linux-musl-gcc"
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]
+          [target.x86_64-pc-windows-msvc]
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]    
+          [target.i686-pc-windows-msvc]
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]      
+          [target.x86_64-apple-darwin]
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"] 
+          [target.aarch64-apple-darwin]
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]     
+          [target.i686-unknown-linux-musl]
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]    
+          EOF
+      - name: Install rust target
+        run: rustup target add $TARGET
+      - name: Run build NetLink
+        run: cargo build --release --verbose --target $TARGET --features $FEATURES
+      - name: List target
+        run: find ./target
+      - name: Compress
+        run: |
+          mkdir -p ./artifacts
+          # windows is the only OS using a different convention for executable file name
+          if [[ $OS =~ ^windows.*$ ]]; then
+              EXEC_NetLink=NetLink.exe
+          else
+              EXEC_NetLink=NetLink
+          fi
+          if [[ $GITHUB_REF_TYPE =~ ^tag$ ]]; then
+            TAG=$GITHUB_REF_NAME
+          else
+            TAG=$GITHUB_SHA
+          fi
+          mv ./target/$TARGET/release/EXEC_NetLink ./artifacts/EXEC_NetLink
+          cd ./artifacts
+          tar -czf NetLink-$TARGET-$TAG.tar.gz *
+      - name: Archive artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: NetLink
+          path: |
+            ./artifacts
+  # deploys to github releases on tag
+  deploy:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: NetLink
+          path: ./artifacts
+      - name: List
+        run: find ./artifacts
+      - name: Release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.YOURTOKEN }}
+          file: ./artifacts/*.tar.gz
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true
