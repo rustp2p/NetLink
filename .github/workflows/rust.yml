@@ -210,7 +210,7 @@ jobs:
           else
             TAG=$GITHUB_SHA
           fi
-          mv ./target/$TARGET/release/EXEC_NetLink ./artifacts/EXEC_NetLink
+          mv ./target/$TARGET/release/$EXEC_NetLink ./artifacts/$EXEC_NetLink
           cd ./artifacts
           tar -czf NetLink-$TARGET-$TAG.tar.gz *
       - name: Archive artifact
