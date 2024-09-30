@@ -173,7 +173,6 @@ async fn recv(mut line: PipeLine, sender: BufferSender<Block<BytesMut>>, _pipe_w
         //     continue;
         // }
         let mut block = poll.alloc();
-        block.clear();
         block.extend_from_slice(handle_rs.payload());
         if !sender.send(block) {
             log::warn!("discard UserData  {handle_rs:?}")

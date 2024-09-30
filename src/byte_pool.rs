@@ -17,7 +17,8 @@ impl<T> BufferPool<T> {
 }
 impl<T: Allocatable> BufferPool<T> {
     pub fn alloc(&self) -> Block<T> {
-        if let Some(data) = self.queue.pop() {
+        if let Some(mut data) = self.queue.pop() {
+            data.clear();
             Block::new(self.queue.clone(), data)
         } else {
             Block::new(self.queue.clone(), T::alloc())
@@ -39,7 +40,7 @@ impl<T> Block<T> {
 }
 impl<T> Drop for Block<T> {
     fn drop(&mut self) {
-        let data = std::mem::ManuallyDrop::into_inner(unsafe { std::ptr::read(&self.data) });
+        let data = unsafe { std::mem::ManuallyDrop::take(&mut self.data) };
         let _ = self.queue.push(data);
     }
 }
@@ -59,15 +60,26 @@ impl<T> DerefMut for Block<T> {
 
 pub trait Allocatable {
     fn alloc() -> Self;
+    fn clear(&mut self);
 }
 
 impl Allocatable for SendPacket {
     fn alloc() -> Self {
         SendPacket::with_capacity(2048)
     }
+
+    fn clear(&mut self) {
+        unsafe {
+            self.set_payload_len(0);
+        }
+    }
 }
 impl Allocatable for BytesMut {
     fn alloc() -> Self {
         BytesMut::with_capacity(2048)
+    }
+
+    fn clear(&mut self) {
+        self.clear();
     }
 }
