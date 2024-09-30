@@ -1,19 +1,23 @@
-use std::net::Ipv4Addr;
-use std::str::FromStr;
-use std::sync::Arc;
-
+use bytes::BytesMut;
 use clap::Parser;
 use env_logger::Env;
 use pnet_packet::icmp::IcmpTypes;
 use pnet_packet::ip::IpNextHeaderProtocols;
 use pnet_packet::Packet;
-use tokio::sync::mpsc::{channel, Sender};
+use std::net::Ipv4Addr;
+use std::str::FromStr;
+use std::sync::Arc;
 use tun_rs::AsyncDevice;
 
+use crate::buffer::BufferSender;
+use crate::byte_pool::{Block, BufferPool};
 use rustp2p::config::{PipeConfig, TcpPipeConfig, UdpPipeConfig};
 use rustp2p::error::*;
 use rustp2p::pipe::{PeerNodeAddress, Pipe, PipeLine, PipeWriter, SendPacket};
 use rustp2p::protocol::node_id::{GroupCode, NodeID};
+
+mod buffer;
+mod byte_pool;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -91,8 +95,8 @@ pub async fn main() -> Result<()> {
     let writer = pipe.writer();
     let shutdown_writer = writer.clone();
     let device_r = device.clone();
-    let (sender1, mut receiver1) = channel::<Vec<u8>>(128);
-    let (sender2, mut receiver2) = channel(128);
+    let (sender1, receiver1) = buffer::channel::<Block<BytesMut>>(256);
+    let (sender2, receiver2) = buffer::channel(256);
     tokio::spawn(async move {
         tun_recv(sender2, writer, device_r, self_id).await.unwrap();
     });
@@ -135,8 +139,9 @@ fn string_to_group_code(input: &str) -> GroupCode {
     array[..len].copy_from_slice(&bytes[..len]);
     array.into()
 }
-async fn recv(mut line: PipeLine, sender: Sender<Vec<u8>>, mut _pipe_wirter: PipeWriter) {
+async fn recv(mut line: PipeLine, sender: BufferSender<Block<BytesMut>>, _pipe_wirter: PipeWriter) {
     let mut buf = [0u8; 2048];
+    let poll = BufferPool::<BytesMut>::new();
     loop {
         let rs = match line.recv_from(&mut buf).await {
             Ok(rs) => rs,
@@ -167,19 +172,23 @@ async fn recv(mut line: PipeLine, sender: Sender<Vec<u8>>, mut _pipe_wirter: Pip
         //     }
         //     continue;
         // }
-        if let Err(e) = sender.send(handle_rs.payload().to_vec()).await {
-            log::warn!("UserData {e:?},{handle_rs:?}")
+        let mut block = poll.alloc();
+        block.clear();
+        block.extend_from_slice(handle_rs.payload());
+        if !sender.send(block) {
+            log::warn!("discard UserData  {handle_rs:?}")
         }
     }
 }
 async fn tun_recv(
-    _sender: Sender<(SendPacket, NodeID)>,
+    _sender: BufferSender<(Block<SendPacket>, NodeID)>,
     _pipe_writer: PipeWriter,
     device: Arc<AsyncDevice>,
     _self_id: Ipv4Addr,
 ) -> Result<()> {
+    let poll = BufferPool::<SendPacket>::new();
     loop {
-        let mut send_packet = SendPacket::with_capacity(2000);
+        let mut send_packet = poll.alloc();
         unsafe { send_packet.set_payload_len(2000) };
         let payload_len = device.recv(&mut send_packet).await?;
         unsafe { send_packet.set_payload_len(payload_len) };
@@ -208,8 +217,8 @@ async fn tun_recv(
         //     "read tun pkt: {:?}",
         //     pnet_packet::ipv4::Ipv4Packet::new(&buf[..payload_len])
         // );
-        if let Err(e) = _sender.send((send_packet, dest_ip.into())).await {
-            log::warn!("{e:?},{dest_ip:?}")
+        if !_sender.send((send_packet, dest_ip.into())) {
+            log::warn!("discard,{dest_ip:?}")
         }
     }
 }

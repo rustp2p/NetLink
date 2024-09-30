@@ -12,8 +12,8 @@ tun-rs = { version = "1", features = ["async"] }
 pnet_packet = "0.35.0"
 ctrlc2 = { version = "3", features = ["tokio", "termination"] }
 tokio = { version = "1.39.2", features = ["full"] }
-
-
+crossbeam-queue = "0.3.11"
+bytes = {version = "1.7.2"}
 [features]
 default = []
 
