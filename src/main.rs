@@ -1,8 +1,6 @@
 use clap::Parser;
 use env_logger::Env;
-use pnet_packet::icmp::IcmpTypes;
-use pnet_packet::ip::IpNextHeaderProtocols;
-use pnet_packet::Packet;
+
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -197,8 +195,11 @@ async fn tun_recv(
     }
 }
 
-#[allow(dead_code)]
+#[cfg(target_os = "macos")]
 async fn process_myself(payload: &[u8], device: &Arc<AsyncDevice>) -> Result<()> {
+    use pnet_packet::icmp::IcmpTypes;
+    use pnet_packet::ip::IpNextHeaderProtocols;
+    use pnet_packet::Packet;
     if let Some(ip_packet) = pnet_packet::ipv4::Ipv4Packet::new(payload) {
         match ip_packet.get_next_level_protocol() {
             IpNextHeaderProtocols::Icmp => {
