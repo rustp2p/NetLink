@@ -1,4 +1,3 @@
-use bytes::BytesMut;
 use clap::Parser;
 use env_logger::Env;
 use pnet_packet::icmp::IcmpTypes;
@@ -10,14 +9,12 @@ use std::sync::Arc;
 use tun_rs::AsyncDevice;
 
 use crate::buffer::BufferSender;
-use crate::byte_pool::{Block, BufferPool};
 use rustp2p::config::{PipeConfig, TcpPipeConfig, UdpPipeConfig};
 use rustp2p::error::*;
-use rustp2p::pipe::{PeerNodeAddress, Pipe, PipeLine, PipeWriter, SendPacket};
-use rustp2p::protocol::node_id::{GroupCode, NodeID};
+use rustp2p::pipe::{PeerNodeAddress, Pipe, PipeLine, PipeWriter, RecvUserData};
+use rustp2p::protocol::node_id::GroupCode;
 
 mod buffer;
-mod byte_pool;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -95,22 +92,14 @@ pub async fn main() -> Result<()> {
     let writer = pipe.writer();
     let shutdown_writer = writer.clone();
     let device_r = device.clone();
-    let (sender1, receiver1) = buffer::channel::<Block<BytesMut>>(256);
-    let (sender2, receiver2) = buffer::channel(256);
+    let (sender1, receiver1) = buffer::channel::<RecvUserData>(256);
     tokio::spawn(async move {
-        tun_recv(sender2, writer, device_r, self_id).await.unwrap();
+        tun_recv(writer, device_r, self_id).await.unwrap();
     });
-    let writer = pipe.writer();
-    tokio::spawn(async move {
-        while let Some((mut packet, dest)) = receiver2.recv().await {
-            if let Err(e) = writer.send_packet_to(&mut packet, &dest).await {
-                log::warn!("writer.send {e:?}")
-            }
-        }
-    });
+
     tokio::spawn(async move {
         while let Some(buf) = receiver1.recv().await {
-            if let Err(e) = device.send(&buf).await {
+            if let Err(e) = device.send(buf.payload()).await {
                 log::warn!("device.send {e:?}")
             }
         }
@@ -120,8 +109,7 @@ pub async fn main() -> Result<()> {
     tokio::spawn(async move {
         loop {
             let line = pipe.accept().await?;
-            let writer = pipe.writer();
-            tokio::spawn(recv(line, sender1.clone(), writer));
+            tokio::spawn(recv(line, sender1.clone()));
         }
         #[allow(unreachable_code)]
         Ok::<(), Error>(())
@@ -139,11 +127,9 @@ fn string_to_group_code(input: &str) -> GroupCode {
     array[..len].copy_from_slice(&bytes[..len]);
     array.into()
 }
-async fn recv(mut line: PipeLine, sender: BufferSender<Block<BytesMut>>, _pipe_wirter: PipeWriter) {
-    let mut buf = [0u8; 2048];
-    let poll = BufferPool::<BytesMut>::new();
+async fn recv(mut line: PipeLine, sender: BufferSender<RecvUserData>) {
     loop {
-        let rs = match line.recv_from(&mut buf).await {
+        let rs = match line.next().await {
             Ok(rs) => rs,
             Err(e) => {
                 log::warn!("recv_from {e:?}");
@@ -157,37 +143,18 @@ async fn recv(mut line: PipeLine, sender: BufferSender<Block<BytesMut>>, _pipe_w
                 continue;
             }
         };
-        // log::info!(
-        //     "recv from peer from addr: {:?}, {:?} ->{:?} is_relay:{}\n{:?}",
-        //     handle_rs.route_key().addr(),
-        //     handle_rs.src_id(),
-        //     handle_rs.dest_id(),
-        //     handle_rs.is_relay(),
-        //     pnet_packet::ipv4::Ipv4Packet::new(handle_rs.payload())
-        // );
-
-        // if is_icmp_request(payload).await {
-        //     if let Err(err) = process_icmp(payload, &mut _pipe_wirter).await {
-        //         log::error!("reply icmp error: {err:?}");
-        //     }
-        //     continue;
-        // }
-        let mut block = poll.alloc();
-        block.extend_from_slice(handle_rs.payload());
-        if !sender.send(block) {
-            log::warn!("discard UserData  {handle_rs:?}")
+        if !sender.send(handle_rs) {
+            log::warn!("discard UserData ")
         }
     }
 }
 async fn tun_recv(
-    _sender: BufferSender<(Block<SendPacket>, NodeID)>,
-    _pipe_writer: PipeWriter,
+    pipe_writer: PipeWriter,
     device: Arc<AsyncDevice>,
     _self_id: Ipv4Addr,
 ) -> Result<()> {
-    let poll = BufferPool::<SendPacket>::new();
     loop {
-        let mut send_packet = poll.alloc();
+        let mut send_packet = pipe_writer.allocate_send_packet();
         unsafe { send_packet.set_payload_len(2000) };
         let payload_len = device.recv(&mut send_packet).await?;
         unsafe { send_packet.set_payload_len(payload_len) };
@@ -212,12 +179,12 @@ async fn tun_recv(
                 continue;
             }
         }
-        // log::info!(
-        //     "read tun pkt: {:?}",
-        //     pnet_packet::ipv4::Ipv4Packet::new(&buf[..payload_len])
-        // );
-        if !_sender.send((send_packet, dest_ip.into())) {
-            log::warn!("discard,{dest_ip:?}")
+
+        if let Err(e) = pipe_writer
+            .send_packet_to(send_packet, &dest_ip.into())
+            .await
+        {
+            log::warn!("discard,{dest_ip:?} {e:?}")
         }
     }
 }
@@ -265,54 +232,3 @@ async fn process_myself(payload: &[u8], device: &Arc<AsyncDevice>) -> Result<()>
     };
     Ok(())
 }
-
-// #[allow(dead_code)]
-// async fn process_icmp(payload: &[u8], writer: &mut PipeWriter) -> Result<()> {
-//     if let Some(ip_packet) = pnet_packet::ipv4::Ipv4Packet::new(payload) {
-//         match ip_packet.get_next_level_protocol() {
-//             IpNextHeaderProtocols::Icmp => {
-//                 let icmp_pkt = pnet_packet::icmp::IcmpPacket::new(ip_packet.payload())
-//                     .ok_or(std::io::Error::other("invalid icmp packet"))?;
-//                 if IcmpTypes::EchoRequest == icmp_pkt.get_icmp_type() {
-//                     let dest_id = NodeID::from(ip_packet.get_source());
-//                     let mut v = ip_packet.payload().to_owned();
-//                     let mut icmp_new =
-//                         pnet_packet::icmp::MutableIcmpPacket::new(&mut v[..]).unwrap();
-//                     icmp_new.set_icmp_type(IcmpTypes::EchoReply);
-//                     icmp_new.set_checksum(pnet_packet::icmp::checksum(&icmp_new.to_immutable()));
-//                     let len = ip_packet.packet().len();
-//                     let mut buf = vec![0u8; len];
-//                     let mut res = pnet_packet::ipv4::MutableIpv4Packet::new(&mut buf).unwrap();
-//                     res.set_total_length(ip_packet.get_total_length());
-//                     res.set_header_length(ip_packet.get_header_length());
-//                     res.set_destination(ip_packet.get_source());
-//                     res.set_source(ip_packet.get_destination());
-//                     res.set_identification(0x42);
-//                     res.set_next_level_protocol(IpNextHeaderProtocols::Icmp);
-//                     res.set_payload(&v);
-//                     res.set_ttl(64);
-//                     res.set_version(ip_packet.get_version());
-//                     res.set_checksum(pnet_packet::ipv4::checksum(&res.to_immutable()));
-//                     let mut send_packet = writer.allocate_send_packet()?;
-//                     send_packet.set_payload(&buf)?;
-//                     writer.send_to_packet(&mut send_packet, &dest_id).await?;
-//                 }
-//             }
-//             other => {
-//                 log::warn!("{other:?} is not processed by this");
-//             }
-//         }
-//     };
-//     Ok(())
-// }
-
-// async fn is_icmp_request(payload: &[u8]) -> bool {
-//     if let Some(ip_packet) = pnet_packet::ipv4::Ipv4Packet::new(payload) {
-//         if ip_packet.get_next_level_protocol() == IpNextHeaderProtocols::Icmp {
-//             if let Some(icmp_pkt) = pnet_packet::icmp::IcmpPacket::new(ip_packet.payload()) {
-//                 return icmp_pkt.get_icmp_type() == IcmpTypes::EchoRequest;
-//             }
-//         }
-//     }
-//     false
-// }
