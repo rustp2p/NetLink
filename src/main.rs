@@ -8,13 +8,11 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tun_rs::AsyncDevice;
 
-use crate::buffer::BufferSender;
 use rustp2p::config::{PipeConfig, TcpPipeConfig, UdpPipeConfig};
 use rustp2p::error::*;
 use rustp2p::pipe::{PeerNodeAddress, Pipe, PipeLine, PipeWriter, RecvUserData};
 use rustp2p::protocol::node_id::GroupCode;
-
-mod buffer;
+use tokio::sync::mpsc::Sender;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -46,7 +44,11 @@ pub async fn main() -> Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
     let mut split = local.split("/");
     let self_id = Ipv4Addr::from_str(split.next().expect("--local error")).expect("--local error");
-    let mask = u8::from_str(split.next().expect("--local error")).expect("--local error");
+    let mask = if let Some(mask) = split.next() {
+        u8::from_str(mask).expect("--local error")
+    } else {
+        0
+    };
     let mut addrs = Vec::new();
     if let Some(peers) = peer {
         for addr in peers {
@@ -59,25 +61,7 @@ pub async fn main() -> Result<()> {
         tx.send(()).await.expect("Signal error");
     })
     .await;
-    let device = tun_rs::create_as_async(
-        tun_rs::Configuration::default()
-            .address_with_prefix(self_id, mask)
-            .platform_config(|_v| {
-                #[cfg(windows)]
-                _v.ring_capacity(4 * 1024 * 1024);
-                #[cfg(target_os = "linux")]
-                _v.tx_queue_len(1000);
-            })
-            .mtu(1400)
-            .up(),
-    )
-    .unwrap();
-    #[cfg(target_os = "macos")]
-    {
-        use tun_rs::AbstractDevice;
-        device.set_ignore_packet_info(true);
-    }
-    let device = Arc::new(device);
+
     let port = port.unwrap_or(23333);
     let udp_config = UdpPipeConfig::default().set_udp_ports(vec![port]);
     let tcp_config = TcpPipeConfig::default().set_tcp_port(port);
@@ -91,25 +75,46 @@ pub async fn main() -> Result<()> {
     let mut pipe = Pipe::new(config).await?;
     let writer = pipe.writer();
     let shutdown_writer = writer.clone();
-    let device_r = device.clone();
-    let (sender1, receiver1) = buffer::channel::<RecvUserData>(256);
-    tokio::spawn(async move {
-        tun_recv(writer, device_r, self_id).await.unwrap();
-    });
-
-    tokio::spawn(async move {
-        while let Some(buf) = receiver1.recv().await {
-            if let Err(e) = device.send(buf.payload()).await {
-                log::warn!("device.send {e:?}")
-            }
+    let (sender, mut receiver) = tokio::sync::mpsc::channel::<RecvUserData>(256);
+    if mask > 0 {
+        let device = tun_rs::create_as_async(
+            tun_rs::Configuration::default()
+                .address_with_prefix(self_id, mask)
+                .platform_config(|_v| {
+                    #[cfg(windows)]
+                    _v.ring_capacity(4 * 1024 * 1024);
+                    #[cfg(target_os = "linux")]
+                    _v.tx_queue_len(1000);
+                })
+                .mtu(1400)
+                .up(),
+        )
+        .unwrap();
+        #[cfg(target_os = "macos")]
+        {
+            use tun_rs::AbstractDevice;
+            device.set_ignore_packet_info(true);
         }
-    });
+        let device = Arc::new(device);
+        let device_r = device.clone();
+        tokio::spawn(async move {
+            tun_recv(writer, device_r, self_id).await.unwrap();
+        });
+
+        tokio::spawn(async move {
+            while let Some(buf) = receiver.recv().await {
+                if let Err(e) = device.send(buf.payload()).await {
+                    log::warn!("device.send {e:?}")
+                }
+            }
+        });
+    }
     log::info!("listen local port: {port}");
 
     tokio::spawn(async move {
         loop {
             let line = pipe.accept().await?;
-            tokio::spawn(recv(line, sender1.clone()));
+            tokio::spawn(recv(line, sender.clone()));
         }
         #[allow(unreachable_code)]
         Ok::<(), Error>(())
@@ -120,6 +125,7 @@ pub async fn main() -> Result<()> {
     log::info!("exit!!!!");
     Ok(())
 }
+
 fn string_to_group_code(input: &str) -> GroupCode {
     let mut array = [0u8; 16];
     let bytes = input.as_bytes();
@@ -127,7 +133,8 @@ fn string_to_group_code(input: &str) -> GroupCode {
     array[..len].copy_from_slice(&bytes[..len]);
     array.into()
 }
-async fn recv(mut line: PipeLine, sender: BufferSender<RecvUserData>) {
+
+async fn recv(mut line: PipeLine, sender: Sender<RecvUserData>) {
     loop {
         let rs = match line.next().await {
             Ok(rs) => rs,
@@ -143,11 +150,12 @@ async fn recv(mut line: PipeLine, sender: BufferSender<RecvUserData>) {
                 continue;
             }
         };
-        if !sender.send(handle_rs) {
+        if sender.send(handle_rs).await.is_err() {
             log::warn!("discard UserData ")
         }
     }
 }
+
 async fn tun_recv(
     pipe_writer: PipeWriter,
     device: Arc<AsyncDevice>,
