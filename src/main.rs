@@ -18,14 +18,14 @@ use tokio::sync::mpsc::Sender;
 #[command(version, about, long_about = None)]
 struct Args {
     /// Peer node address.
-    /// example: --peer tcp://192.168.10.13:23333 --peer udp://192.168.10.23:23333
+    /// e.g.: --peer tcp://192.168.10.13:23333 --peer udp://192.168.10.23:23333
     #[arg(short, long)]
     peer: Option<Vec<String>>,
     /// Local node IP and mask.
-    /// example: --local 10.26.0.2/24
+    /// e.g.: --local 10.26.0.2/24
     #[arg(short, long)]
     local: String,
-    /// Nodes with the same group_comde can form a network
+    /// Nodes with the same group_code can form a network (Maximum length 16)
     #[arg(short, long)]
     group_code: String,
     /// Listen local port
