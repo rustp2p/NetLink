@@ -1,4 +1,4 @@
-#[cfg(any(target_os = "freebsd", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "macos"))]
 pub fn dev_name_to_index(name: &str) -> std::io::Result<u32> {
     match std::ffi::CString::new(name) {
         Ok(name) => {
@@ -9,8 +9,6 @@ pub fn dev_name_to_index(name: &str) -> std::io::Result<u32> {
                 Ok(index)
             }
         }
-        Err(_e) => {
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "name error"))
-        }
+        Err(_e) => Err(std::io::Error::new(std::io::ErrorKind::Other, "name error")),
     }
 }

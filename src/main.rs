@@ -13,8 +13,8 @@ use rustp2p::pipe::{PeerNodeAddress, Pipe, PipeLine, PipeWriter, RecvUserData};
 use rustp2p::protocol::node_id::GroupCode;
 use tokio::sync::mpsc::Sender;
 
-mod route_listen;
 mod platform;
+mod route_listen;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -67,23 +67,30 @@ pub async fn main() -> Result<()> {
     ctrlc2::set_async_handler(async move {
         tx.send(()).await.expect("Signal error");
     })
-        .await;
+    .await;
 
     let port = port.unwrap_or(23333);
     let mut udp_config = UdpPipeConfig::default().set_udp_ports(vec![port]);
     let mut tcp_config = TcpPipeConfig::default().set_tcp_port(port);
     if let Some(bind_dev_name) = bind_dev {
+        let _bind_dev_index = match platform::dev_name_to_index(&bind_dev_name) {
+            Ok(index) => index,
+            Err(e) => {
+                log::error!("--bind-dev error: {e:?}");
+                return Ok(());
+            }
+        };
         #[cfg(not(target_os = "linux"))]
         {
-            let bind_dev_index = platform::dev_name_to_index(&bind_dev_name).unwrap();
-            log::info!("bind_dev_name={bind_dev_name:?},bind_dev_index={bind_dev_index}");
-            udp_config = udp_config.set_default_interface(LocalInterface::new(bind_dev_index));
-            tcp_config = tcp_config.set_default_interface(LocalInterface::new(bind_dev_index));
+            log::info!("bind_dev_name={bind_dev_name:?},bind_dev_index={_bind_dev_index}");
+            udp_config = udp_config.set_default_interface(LocalInterface::new(_bind_dev_index));
+            tcp_config = tcp_config.set_default_interface(LocalInterface::new(_bind_dev_index));
         }
         #[cfg(target_os = "linux")]
         {
             log::info!("bind_dev_name={bind_dev_name:?}");
-            udp_config = udp_config.set_default_interface(LocalInterface::new(bind_dev_name.clone()));
+            udp_config =
+                udp_config.set_default_interface(LocalInterface::new(bind_dev_name.clone()));
             tcp_config = tcp_config.set_default_interface(LocalInterface::new(bind_dev_name));
         }
     }
@@ -111,7 +118,7 @@ pub async fn main() -> Result<()> {
                 .mtu(1400)
                 .up(),
         )
-            .unwrap();
+        .unwrap();
         let if_index = device.if_index().unwrap();
         let name = device.name().unwrap();
         log::info!("device index={if_index},name={name}",);
