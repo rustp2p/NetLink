@@ -41,7 +41,7 @@ pub async fn main() -> Result<()> {
         group_code,
         port,
     } = Args::parse();
-    env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     let mut split = local.split("/");
     let self_id = Ipv4Addr::from_str(split.next().expect("--local error")).expect("--local error");
     let mask = if let Some(mask) = split.next() {
@@ -121,11 +121,15 @@ pub async fn main() -> Result<()> {
 
     tokio::spawn(async move {
         loop {
-            let line = pipe.accept().await?;
-            tokio::spawn(recv(line, sender.clone()));
+            match pipe.accept().await {
+                Ok(line) => {
+                    tokio::spawn(recv(line, sender.clone()));
+                }
+                Err(e) => {
+                    log::error!("pipe.accept {e:?}");
+                }
+            }
         }
-        #[allow(unreachable_code)]
-        Ok::<(), Error>(())
     });
 
     quit.recv().await.expect("quit error");
