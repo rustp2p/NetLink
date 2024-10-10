@@ -12,14 +12,14 @@ pub async fn route_listen(if_index: u32, external_route: ExternalRoute) -> std::
         futures::pin_mut!(stream);
 
         while let Some(value) = stream.next().await {
-            let route = match value {
-                RouteChange::Add(route) => route,
-                RouteChange::Delete(route) => route,
-                RouteChange::Change(route) => route,
+            let (action, route) = match value {
+                RouteChange::Add(route) => ("add", route),
+                RouteChange::Delete(route) => ("delete", route),
+                RouteChange::Change(route) => ("change", route),
             };
             if let Some((dest, mask, next)) = route_warp(route, if_index) {
                 log::info!(
-                    "subnet route {}/{} -> {next}",
+                    "{action} subnet route {}/{} -> {next}",
                     Ipv4Addr::from(dest),
                     mask.count_ones()
                 )
