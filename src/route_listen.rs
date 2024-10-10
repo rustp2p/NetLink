@@ -89,7 +89,7 @@ impl ExternalRoute {
     }
     pub fn update(&self, mut route_table: Vec<(u32, u32, Ipv4Addr)>) {
         for (dest, mask, _) in &mut route_table {
-            *dest = *mask & *dest;
+            *dest &= *mask
         }
         route_table.sort_by(|(dest1, _, _), (dest2, _, _)| dest2.cmp(dest1));
 
