@@ -20,23 +20,27 @@ mod route_listen;
 #[command(version, about, long_about = None)]
 struct Args {
     /// Peer node address.
-    /// e.g.: --peer tcp://192.168.10.13:23333 --peer udp://192.168.10.23:23333
+    /// e.g.: -p tcp://192.168.10.13:23333 -p udp://192.168.10.23:23333
     #[arg(short, long)]
     peer: Option<Vec<String>>,
     /// Local node IP and mask.
-    /// e.g.: --local 10.26.0.2/24
-    #[arg(short, long)]
+    /// e.g.: -l 10.26.0.2/24
+    #[arg(short, long, value_name = "LOCAL IP")]
     local: String,
-    /// Nodes with the same group_code can form a network (Maximum length 16)
-    #[arg(short, long)]
+    /// Nodes with the same group_code can form a network (Maximum length 16).
+    #[arg(short, long, value_name = "GROUP CODE")]
     group_code: String,
     /// Listen local port
     #[arg(short = 'P', long)]
     port: Option<u16>,
-    /// Bind the outgoing network interface (using the interface name)
-    /// e.g.: --bind-dev eth0
-    #[arg(short, long)]
+    /// Bind the outgoing network interface (using the interface name).
+    /// e.g.: -b eth0
+    #[arg(short, long, value_name = "DEVICE NAME")]
     bind_dev: Option<String>,
+    /// Enable data encryption.
+    /// e.g.: -e "password"
+    #[arg(short, long, value_name = "PASSWORD")]
+    encrypt: Option<String>,
 }
 
 #[tokio::main]
@@ -47,6 +51,7 @@ pub async fn main() -> Result<()> {
         group_code,
         port,
         bind_dev,
+        encrypt,
     } = Args::parse();
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     let mut split = local.split('/');
@@ -94,13 +99,15 @@ pub async fn main() -> Result<()> {
             tcp_config = tcp_config.set_default_interface(LocalInterface::new(bind_dev_name));
         }
     }
-    let config = PipeConfig::empty()
+    let mut config = PipeConfig::empty()
         .set_udp_pipe_config(udp_config)
         .set_tcp_pipe_config(tcp_config)
         .set_direct_addrs(addrs)
         .set_group_code(string_to_group_code(&group_code))
         .set_node_id(self_id.into());
-
+    if let Some(encrypt) = encrypt {
+        config = config.set_encryption(encrypt)
+    }
     let mut pipe = Pipe::new(config).await?;
     let writer = pipe.writer();
     let shutdown_writer = writer.clone();
