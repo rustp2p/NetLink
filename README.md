@@ -1,6 +1,6 @@
 NetLink is a decentralized networking tool built on the [rustp2p](https://crates.io/crates/rustp2p) library.
 
-```shell
+```
 Usage: netLink.exe [OPTIONS] --local <LOCAL IP> --group-code <GROUP CODE>
 
 Options:
