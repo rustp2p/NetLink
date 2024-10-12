@@ -133,11 +133,6 @@ jobs:
                 ;;
             esac
           
-            if [[ $TARGET =~ ^mips.*$ ]]; then
-              # mips平台使用1.71.1版本
-              rustup install 1.71.1
-              rustup default 1.71.1  
-            fi
           
             if [  -n "$MUSL_URI" ]; then
               mkdir -p ./musl_gcc 
@@ -145,6 +140,15 @@ jobs:
               tar zxf ./musl_gcc/$MUSL_URI.tgz -C ./musl_gcc/
               sudo ln -s $(pwd)/musl_gcc/$MUSL_URI/bin/*gcc /usr/bin/
             fi
+          fi
+          if [[ $TARGET =~ ^mips.*$ ]]; then
+            # mips平台使用1.71.1版本
+            rustup install 1.71.1
+            rustup default 1.71.1  
+          elif [[ $OS ==~ ^windows.*$ ]]; then
+            # Windows 平台使用 1.77 版本
+            rustup install 1.77.0
+            rustup default 1.77.0
           fi
           rustup -V
           
