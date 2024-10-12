@@ -9,7 +9,7 @@ use tun_rs::{AbstractDevice, AsyncDevice};
 use crate::route_listen::ExternalRoute;
 use rustp2p::config::{LocalInterface, PipeConfig, TcpPipeConfig, UdpPipeConfig};
 use rustp2p::error::*;
-use rustp2p::pipe::{PeerNodeAddress, Pipe, PipeLine, PipeWriter, RecvUserData};
+use rustp2p::pipe::{PeerNodeAddress, Pipe, PipeLine, PipeWriter, RecvError, RecvUserData};
 use rustp2p::protocol::node_id::GroupCode;
 use tokio::sync::mpsc::Sender;
 
@@ -188,7 +188,9 @@ async fn recv(mut line: PipeLine, sender: Sender<RecvUserData>) {
         let rs = match line.next().await {
             Ok(rs) => rs,
             Err(e) => {
-                log::warn!("recv_from {e:?}");
+                if let RecvError::Io(e) = e {
+                    log::warn!("recv_from {e:?}");
+                }
                 return;
             }
         };
