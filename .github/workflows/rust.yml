@@ -145,7 +145,7 @@ jobs:
             # mips平台使用1.71.1版本
             rustup install 1.71.1
             rustup default 1.71.1  
-          elif [[ $OS ==~ ^windows.*$ ]]; then
+          elif [[ $OS =~ ^windows.*$ ]]; then
             # Windows 平台使用 1.77 版本
             rustup install 1.77.0
             rustup default 1.77.0
