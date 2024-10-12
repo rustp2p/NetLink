@@ -1,6 +1,7 @@
 use clap::Parser;
 use env_logger::Env;
 
+use rustp2p::cipher::aes_gcm::{AesGcmCipher, AES_GCM_ENCRYPTION_RESERVED};
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -10,7 +11,7 @@ use crate::route_listen::ExternalRoute;
 use rustp2p::config::{LocalInterface, PipeConfig, TcpPipeConfig, UdpPipeConfig};
 use rustp2p::error::*;
 use rustp2p::pipe::{PeerNodeAddress, Pipe, PipeLine, PipeWriter, RecvError, RecvUserData};
-use rustp2p::protocol::node_id::GroupCode;
+use rustp2p::protocol::node_id::{GroupCode, NodeID};
 use tokio::sync::mpsc::Sender;
 
 mod platform;
@@ -41,6 +42,9 @@ struct Args {
     /// e.g.: -e "password"
     #[arg(short, long, value_name = "PASSWORD")]
     encrypt: Option<String>,
+    /// Parallel encryption and decryption. This is a test
+    #[arg(long)]
+    parallel: bool,
 }
 
 #[tokio::main]
@@ -52,6 +56,7 @@ pub async fn main() -> Result<()> {
         port,
         bind_dev,
         encrypt,
+        parallel,
     } = Args::parse();
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     let mut split = local.split('/');
@@ -99,15 +104,14 @@ pub async fn main() -> Result<()> {
             tcp_config = tcp_config.set_default_interface(LocalInterface::new(bind_dev_name));
         }
     }
-    let mut config = PipeConfig::empty()
+    let config = PipeConfig::empty()
         .set_udp_pipe_config(udp_config)
         .set_tcp_pipe_config(tcp_config)
         .set_direct_addrs(addrs)
         .set_group_code(string_to_group_code(&group_code))
         .set_node_id(self_id.into());
-    if let Some(encrypt) = encrypt {
-        config = config.set_encryption(encrypt)
-    }
+    let cipher = encrypt.map(rustp2p::cipher::aes_gcm::cipher);
+
     let mut pipe = Pipe::new(config).await?;
     let writer = pipe.writer();
     let shutdown_writer = writer.clone();
@@ -139,15 +143,54 @@ pub async fn main() -> Result<()> {
         }
         let device = Arc::new(device);
         let device_r = device.clone();
+        let cipher_ = cipher.clone();
         tokio::spawn(async move {
-            tun_recv(writer, device_r, self_id, external_route)
-                .await
-                .unwrap();
+            if let Err(e) =
+                tun_recv(writer, device_r, self_id, external_route, cipher_, parallel).await
+            {
+                log::warn!("device.recv {e:?}")
+            }
         });
-
+        let cipher = cipher.clone();
         tokio::spawn(async move {
-            while let Some(buf) = receiver.recv().await {
-                if let Err(e) = device.send(buf.payload()).await {
+            while let Some(mut buf) = receiver.recv().await {
+                if let Some(cipher) = cipher.as_ref() {
+                    if parallel {
+                        let cipher = cipher.clone();
+                        let device = device.clone();
+                        tokio::spawn(async move {
+                            match cipher
+                                .decrypt(gen_salt(&buf.src_id(), &buf.dest_id()), buf.payload_mut())
+                            {
+                                Ok(len) => {
+                                    if let Err(e) = device.send(&buf.payload()[..len]).await {
+                                        log::warn!("device.send {e:?}")
+                                    }
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "decrypt {e:?},{:?}->{:?}",
+                                        buf.src_id(),
+                                        buf.dest_id()
+                                    )
+                                }
+                            }
+                        });
+                    } else {
+                        match cipher
+                            .decrypt(gen_salt(&buf.src_id(), &buf.dest_id()), buf.payload_mut())
+                        {
+                            Ok(len) => {
+                                if let Err(e) = device.send(&buf.payload()[..len]).await {
+                                    log::warn!("device.send {e:?}")
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("decrypt {e:?},{:?}->{:?}", buf.src_id(), buf.dest_id())
+                            }
+                        }
+                    }
+                } else if let Err(e) = device.send(buf.payload()).await {
                     log::warn!("device.send {e:?}")
                 }
             }
@@ -183,6 +226,13 @@ fn string_to_group_code(input: &str) -> GroupCode {
     array.into()
 }
 
+fn gen_salt(src_id: &NodeID, dest_id: &NodeID) -> [u8; 12] {
+    let mut res = [0u8; 12];
+    res[..4].copy_from_slice(src_id.as_ref());
+    res[4..8].copy_from_slice(dest_id.as_ref());
+    res
+}
+
 async fn recv(mut line: PipeLine, sender: Sender<RecvUserData>) {
     loop {
         let rs = match line.next().await {
@@ -210,12 +260,15 @@ async fn recv(mut line: PipeLine, sender: Sender<RecvUserData>) {
 async fn tun_recv(
     pipe_writer: PipeWriter,
     device: Arc<AsyncDevice>,
-    _self_id: Ipv4Addr,
+    self_ip: Ipv4Addr,
     external_route: ExternalRoute,
+    cipher: Option<AesGcmCipher>,
+    parallel: bool,
 ) -> Result<()> {
+    let self_id: NodeID = self_ip.into();
     loop {
         let mut send_packet = pipe_writer.allocate_send_packet();
-        unsafe { send_packet.set_payload_len(2000) };
+        unsafe { send_packet.set_payload_len(send_packet.capacity()) };
         let payload_len = device.recv(&mut send_packet).await?;
         unsafe { send_packet.set_payload_len(payload_len) };
         let buf: &mut [u8] = &mut send_packet;
@@ -232,19 +285,39 @@ async fn tun_recv(
         }
         #[cfg(target_os = "macos")]
         {
-            if dest_ip == _self_id {
+            if dest_ip == self_ip {
                 if let Err(err) = process_myself(&buf[..payload_len], &device).await {
                     log::error!("process myself err: {err:?}");
                 }
                 continue;
             }
         }
-        let dest = if let Some(next_hop) = external_route.route(&dest_ip) {
+        let dest_id = if let Some(next_hop) = external_route.route(&dest_ip) {
             next_hop.into()
         } else {
             dest_ip.into()
         };
-        if let Err(e) = pipe_writer.send_packet_to(send_packet, &dest).await {
+        if let Some(cipher) = cipher.as_ref() {
+            if parallel {
+                let cipher = cipher.clone();
+                let pipe_writer = pipe_writer.clone();
+                tokio::spawn(async move {
+                    send_packet.resize(payload_len + AES_GCM_ENCRYPTION_RESERVED, 0);
+                    if let Err(e) = cipher.encrypt(gen_salt(&self_id, &dest_id), &mut send_packet) {
+                        log::warn!("encrypt,{dest_ip:?} {e:?}")
+                    } else if let Err(e) = pipe_writer.send_packet_to(send_packet, &dest_id).await {
+                        log::warn!("discard,{dest_ip:?} {e:?}")
+                    }
+                });
+            } else {
+                send_packet.resize(payload_len + AES_GCM_ENCRYPTION_RESERVED, 0);
+                if let Err(e) = cipher.encrypt(gen_salt(&self_id, &dest_id), &mut send_packet) {
+                    log::warn!("encrypt,{dest_ip:?} {e:?}")
+                } else if let Err(e) = pipe_writer.send_packet_to(send_packet, &dest_id).await {
+                    log::warn!("discard,{dest_ip:?} {e:?}")
+                }
+            }
+        } else if let Err(e) = pipe_writer.send_packet_to(send_packet, &dest_id).await {
             log::warn!("discard,{dest_ip:?} {e:?}")
         }
     }

@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rustp2p = "0.1.10"
+#rustp2p = {version = "0.1.11",features = ["aes-gcm"]}
+rustp2p = {git="https://github.com/rustp2p/rustp2p.git",features = ["aes-gcm"]}
+
 clap = { version = "=4.0.32", features = ["derive"] }
 log = "0.4.22"
 env_logger = "0.11.5"
