@@ -89,7 +89,7 @@ async fn run(args: Args) -> Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     let mut split = local.split('/');
     let self_id = Ipv4Addr::from_str(split.next().expect("--local error")).expect("--local error");
-    let mask = if let Some(mask) = split.next() {
+    let prefix = if let Some(mask) = split.next() {
         u8::from_str(mask).expect("--local error")
     } else {
         0
@@ -144,10 +144,10 @@ async fn run(args: Args) -> Result<()> {
     let writer = pipe.writer();
     let shutdown_writer = writer.clone();
     let (sender, mut receiver) = tokio::sync::mpsc::channel::<RecvUserData>(256);
-    if mask > 0 {
+    if prefix > 0 {
         let device = tun_rs::create_as_async(
             tun_rs::Configuration::default()
-                .address_with_prefix(self_id, mask)
+                .address_with_prefix(self_id, prefix)
                 .platform_config(|_v| {
                     #[cfg(windows)]
                     _v.ring_capacity(4 * 1024 * 1024);
@@ -161,7 +161,7 @@ async fn run(args: Args) -> Result<()> {
         let if_index = device.if_index().unwrap();
         let name = device.name().unwrap();
         log::info!("device index={if_index},name={name}",);
-        let external_route = ExternalRoute::new();
+        let external_route = ExternalRoute::new(self_id, prefix);
         route_listen::route_listen(if_index, external_route.clone()).await?;
         if let Some(exit_node) = exit_node {
             exit_route::exit_route(exit_node, if_index).await?;
@@ -336,7 +336,7 @@ async fn tun_recv(
                     if let Err(e) = cipher.encrypt(gen_salt(&self_id, &dest_id), &mut send_packet) {
                         log::warn!("encrypt,{dest_ip:?} {e:?}")
                     } else if let Err(e) = pipe_writer.send_packet_to(send_packet, &dest_id).await {
-                        log::warn!("discard,{dest_ip:?} {e:?}")
+                        log::warn!("discard,{dest_ip:?}:{:?} {e:?}", dest_id.as_ref())
                     }
                 });
             } else {
@@ -344,11 +344,11 @@ async fn tun_recv(
                 if let Err(e) = cipher.encrypt(gen_salt(&self_id, &dest_id), &mut send_packet) {
                     log::warn!("encrypt,{dest_ip:?} {e:?}")
                 } else if let Err(e) = pipe_writer.send_packet_to(send_packet, &dest_id).await {
-                    log::warn!("discard,{dest_ip:?} {e:?}")
+                    log::warn!("discard,{dest_ip:?}:{:?} {e:?}", dest_id.as_ref())
                 }
             }
         } else if let Err(e) = pipe_writer.send_packet_to(send_packet, &dest_id).await {
-            log::warn!("discard,{dest_ip:?} {e:?}")
+            log::warn!("discard,{dest_ip:?}:{:?} {e:?}", dest_id.as_ref())
         }
     }
 }

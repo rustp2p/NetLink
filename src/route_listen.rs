@@ -44,6 +44,7 @@ pub async fn route_listen(if_index: u32, external_route: ExternalRoute) -> std::
     });
     Ok(())
 }
+
 fn route_warp(route: Route, if_index: u32) -> Option<(u32, u32, Ipv4Addr)> {
     if let Some(index) = route.ifindex {
         if index == if_index {
@@ -68,6 +69,7 @@ fn route_warp(route: Route, if_index: u32) -> Option<(u32, u32, Ipv4Addr)> {
     }
     None
 }
+
 fn prefix_to_mask(prefix: u8) -> u32 {
     let mask: u32 = if prefix == 0 {
         0
@@ -79,11 +81,17 @@ fn prefix_to_mask(prefix: u8) -> u32 {
 
 #[derive(Clone)]
 pub struct ExternalRoute {
+    network: u32,
+    mask: u32,
     route_table: Arc<Mutex<Vec<(u32, u32, Ipv4Addr)>>>,
 }
+
 impl ExternalRoute {
-    pub fn new() -> Self {
+    pub fn new(ip: Ipv4Addr, prefix: u8) -> Self {
+        let mask = prefix_to_mask(prefix);
         Self {
+            network: u32::from(ip) & mask,
+            mask,
             route_table: Arc::new(Mutex::new(vec![])),
         }
     }
@@ -98,11 +106,18 @@ impl ExternalRoute {
     }
 
     pub fn route(&self, ip: &Ipv4Addr) -> Option<Ipv4Addr> {
+        if ip.is_broadcast() {
+            return None;
+        }
+        let ip: u32 = (*ip).into();
+
+        if self.mask & ip == self.network {
+            return None;
+        }
         let route_table = self.route_table.lock();
         if route_table.is_empty() {
             return None;
         }
-        let ip: u32 = (*ip).into();
         for (dest, mask, gateway) in route_table.iter() {
             if *mask & ip == *dest {
                 return Some(*gateway);
