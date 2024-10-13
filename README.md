@@ -10,6 +10,9 @@ Options:
   -P, --port <PORT>              Listen local port
   -b, --bind-dev <DEVICE NAME>   Bind the outgoing network interface (using the interface name). e.g.: -b eth0
   -e, --encrypt <PASSWORD>       Enable data encryption. e.g.: -e "password"
+      --threads <THREADS>        Set the number of threads, default to 2
+      --pcrypt                   This is a test. Parallel encryption and decryption
+      --exit-node <EXIT_NODE>    Global exit node,please use it together with '--bind-dev'
  ```
 
 
