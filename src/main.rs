@@ -42,13 +42,34 @@ struct Args {
     /// e.g.: -e "password"
     #[arg(short, long, value_name = "PASSWORD")]
     encrypt: Option<String>,
-    /// Parallel encryption and decryption. This is a test
+    /// Set the number of threads, default to 2
     #[arg(long)]
-    parallel: bool,
+    threads: Option<usize>,
+    /// This is a test. Parallel encryption and decryption.
+    /// Enabling this parameter may reduce performance
+    #[arg(long)]
+    pcrypt: bool,
+}
+pub fn main() -> Result<()> {
+    let args = Args::parse();
+    let worker_threads = args.threads.unwrap_or(2);
+    if worker_threads <= 1 {
+        main_current_thread(args)
+    } else {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(worker_threads)
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(run(args))
+    }
+}
+#[tokio::main(flavor = "current_thread")]
+async fn main_current_thread(args: Args) -> Result<()> {
+    run(args).await
 }
 
-#[tokio::main]
-pub async fn main() -> Result<()> {
+async fn run(args: Args) -> Result<()> {
     let Args {
         peer,
         local,
@@ -56,8 +77,9 @@ pub async fn main() -> Result<()> {
         port,
         bind_dev,
         encrypt,
-        parallel,
-    } = Args::parse();
+        pcrypt,
+        ..
+    } = args;
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     let mut split = local.split('/');
     let self_id = Ipv4Addr::from_str(split.next().expect("--local error")).expect("--local error");
@@ -146,7 +168,7 @@ pub async fn main() -> Result<()> {
         let cipher_ = cipher.clone();
         tokio::spawn(async move {
             if let Err(e) =
-                tun_recv(writer, device_r, self_id, external_route, cipher_, parallel).await
+                tun_recv(writer, device_r, self_id, external_route, cipher_, pcrypt).await
             {
                 log::warn!("device.recv {e:?}")
             }
@@ -155,7 +177,7 @@ pub async fn main() -> Result<()> {
         tokio::spawn(async move {
             while let Some(mut buf) = receiver.recv().await {
                 if let Some(cipher) = cipher.as_ref() {
-                    if parallel {
+                    if pcrypt {
                         let cipher = cipher.clone();
                         let device = device.clone();
                         tokio::spawn(async move {
@@ -263,7 +285,7 @@ async fn tun_recv(
     self_ip: Ipv4Addr,
     external_route: ExternalRoute,
     cipher: Option<AesGcmCipher>,
-    parallel: bool,
+    pcrypt: bool,
 ) -> Result<()> {
     let self_id: NodeID = self_ip.into();
     loop {
@@ -298,7 +320,7 @@ async fn tun_recv(
             dest_ip.into()
         };
         if let Some(cipher) = cipher.as_ref() {
-            if parallel {
+            if pcrypt {
                 let cipher = cipher.clone();
                 let pipe_writer = pipe_writer.clone();
                 tokio::spawn(async move {
