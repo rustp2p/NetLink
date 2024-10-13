@@ -14,6 +14,7 @@ use rustp2p::pipe::{PeerNodeAddress, Pipe, PipeLine, PipeWriter, RecvError, Recv
 use rustp2p::protocol::node_id::{GroupCode, NodeID};
 use tokio::sync::mpsc::Sender;
 
+mod exit_route;
 mod platform;
 mod route_listen;
 
@@ -46,10 +47,13 @@ struct Args {
     #[arg(long)]
     threads: Option<usize>,
     /// This is a test. Parallel encryption and decryption.
-    /// Enabling this parameter may reduce performance
     #[arg(long)]
     pcrypt: bool,
+    /// Global exit node,please use it together with '--bind-dev'
+    #[arg(long)]
+    exit_node: Option<Ipv4Addr>,
 }
+
 pub fn main() -> Result<()> {
     let args = Args::parse();
     let worker_threads = args.threads.unwrap_or(2);
@@ -64,6 +68,7 @@ pub fn main() -> Result<()> {
             .block_on(run(args))
     }
 }
+
 #[tokio::main(flavor = "current_thread")]
 async fn main_current_thread(args: Args) -> Result<()> {
     run(args).await
@@ -78,6 +83,7 @@ async fn run(args: Args) -> Result<()> {
         bind_dev,
         encrypt,
         pcrypt,
+        exit_node,
         ..
     } = args;
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
@@ -157,7 +163,9 @@ async fn run(args: Args) -> Result<()> {
         log::info!("device index={if_index},name={name}",);
         let external_route = ExternalRoute::new();
         route_listen::route_listen(if_index, external_route.clone()).await?;
-
+        if let Some(exit_node) = exit_node {
+            exit_route::exit_route(exit_node, if_index).await?;
+        }
         #[cfg(target_os = "macos")]
         {
             use tun_rs::AbstractDevice;
