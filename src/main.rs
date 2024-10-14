@@ -25,7 +25,7 @@ struct Args {
     /// e.g.: -p tcp://192.168.10.13:23333 -p udp://192.168.10.23:23333
     #[arg(short, long)]
     peer: Option<Vec<String>>,
-    /// Local node IP and mask.
+    /// Local node IP and prefix.
     /// e.g.: -l 10.26.0.2/24
     #[arg(short, long, value_name = "LOCAL IP")]
     local: String,
