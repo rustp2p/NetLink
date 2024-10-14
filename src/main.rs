@@ -1,7 +1,6 @@
 use clap::Parser;
 use env_logger::Env;
 
-use rustp2p::cipher::Cipher;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -14,6 +13,7 @@ use rustp2p::pipe::{PeerNodeAddress, Pipe, PipeLine, PipeWriter, RecvError, Recv
 use rustp2p::protocol::node_id::{GroupCode, NodeID};
 use tokio::sync::mpsc::Sender;
 
+mod cipher;
 mod exit_route;
 mod platform;
 mod route_listen;
@@ -46,7 +46,7 @@ struct Args {
     /// e.g.: -e "password"
     #[arg(short, long, value_name = "PASSWORD")]
     encrypt: Option<String>,
-    /// Set encryption algorithm. Optional aes-gcm/chacha20-poly1305, default is chacha20-poly1305
+    /// Set encryption algorithm. Optional aes-gcm/chacha20-poly1305/xor, default is chacha20-poly1305
     #[arg(short, long)]
     algorithm: Option<String>,
     /// Global exit node,please use it together with '--bind-dev'
@@ -86,7 +86,7 @@ async fn run(args: Args) -> Result<()> {
         exit_node,
         ..
     } = args;
-    env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     let mut split = local.split('/');
     let self_id = Ipv4Addr::from_str(split.next().expect("--local error")).expect("--local error");
     let prefix = if let Some(mask) = split.next() {
@@ -140,15 +140,16 @@ async fn run(args: Args) -> Result<()> {
 
     let cipher = if let Some(v) = algorithm {
         match v.to_lowercase().as_str() {
-            "aes-gcm" => encrypt.map(Cipher::new_aes_gcm),
-            "chacha20-poly1305" => encrypt.map(Cipher::new_chacha20_poly1305),
+            "aes-gcm" => encrypt.map(cipher::Cipher::new_aes_gcm),
+            "chacha20-poly1305" => encrypt.map(cipher::Cipher::new_chacha20_poly1305),
+            "xor" => encrypt.map(cipher::Cipher::new_xor),
             _ => {
                 println!("--algorithm error");
                 return Ok(());
             }
         }
     } else {
-        encrypt.map(Cipher::new_chacha20_poly1305)
+        encrypt.map(cipher::Cipher::new_chacha20_poly1305)
     };
 
     let mut pipe = Pipe::new(config).await?;
@@ -287,7 +288,7 @@ async fn tun_recv(
     device: Arc<AsyncDevice>,
     self_ip: Ipv4Addr,
     external_route: ExternalRoute,
-    cipher: Option<Cipher>,
+    cipher: Option<cipher::Cipher>,
 ) -> Result<()> {
     let self_id: NodeID = self_ip.into();
     loop {
