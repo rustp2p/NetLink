@@ -341,7 +341,9 @@ async fn tun_recv(
                 continue;
             }
         }
-        let dest_id = if let Some(next_hop) = external_route.route(&dest_ip) {
+        let dest_id = if v6 {
+            dest_ip.into()
+        } else if let Some(next_hop) = external_route.route(&dest_ip) {
             next_hop.into()
         } else {
             dest_ip.into()
