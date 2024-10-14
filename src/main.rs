@@ -86,7 +86,7 @@ async fn run(args: Args) -> Result<()> {
         exit_node,
         ..
     } = args;
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
     let mut split = local.split('/');
     let self_id = Ipv4Addr::from_str(split.next().expect("--local error")).expect("--local error");
     let prefix = if let Some(mask) = split.next() {
@@ -108,8 +108,14 @@ async fn run(args: Args) -> Result<()> {
     .await;
 
     let port = port.unwrap_or(23333);
-    let mut udp_config = UdpPipeConfig::default().set_udp_ports(vec![port]);
-    let mut tcp_config = TcpPipeConfig::default().set_tcp_port(port);
+    let udp_config = UdpPipeConfig::default().set_udp_ports(vec![port]);
+    let tcp_config = TcpPipeConfig::default().set_tcp_port(port);
+    let mut config = PipeConfig::empty()
+        .set_udp_pipe_config(udp_config)
+        .set_tcp_pipe_config(tcp_config)
+        .set_direct_addrs(addrs)
+        .set_group_code(string_to_group_code(&group_code))
+        .set_node_id(self_id.into());
     if let Some(bind_dev_name) = bind_dev {
         let _bind_dev_index = match platform::dev_name_to_index(&bind_dev_name) {
             Ok(index) => index,
@@ -118,26 +124,20 @@ async fn run(args: Args) -> Result<()> {
                 return Ok(());
             }
         };
+        let iface;
         #[cfg(not(target_os = "linux"))]
         {
             log::info!("bind_dev_name={bind_dev_name:?},bind_dev_index={_bind_dev_index}");
-            udp_config = udp_config.set_default_interface(LocalInterface::new(_bind_dev_index));
-            tcp_config = tcp_config.set_default_interface(LocalInterface::new(_bind_dev_index));
+            iface = LocalInterface::new(_bind_dev_index);
         }
         #[cfg(target_os = "linux")]
         {
             log::info!("bind_dev_name={bind_dev_name:?}");
-            udp_config =
-                udp_config.set_default_interface(LocalInterface::new(bind_dev_name.clone()));
-            tcp_config = tcp_config.set_default_interface(LocalInterface::new(bind_dev_name));
+            iface = LocalInterface::new(bind_dev_name.clone());
         }
+        config = config.set_default_interface(iface);
     }
-    let config = PipeConfig::empty()
-        .set_udp_pipe_config(udp_config)
-        .set_tcp_pipe_config(tcp_config)
-        .set_direct_addrs(addrs)
-        .set_group_code(string_to_group_code(&group_code))
-        .set_node_id(self_id.into());
+
     let cipher = if let Some(v) = algorithm {
         match v.to_lowercase().as_str() {
             "aes-gcm" => encrypt.map(Cipher::new_aes_gcm),
