@@ -161,7 +161,10 @@ async fn run(args: Args) -> Result<()> {
                 .address_with_prefix(self_id, prefix)
                 .platform_config(|_v| {
                     #[cfg(windows)]
-                    _v.ring_capacity(4 * 1024 * 1024);
+                    {
+                        _v.ring_capacity(4 * 1024 * 1024);
+                        _v.metric(0);
+                    }
                     #[cfg(target_os = "linux")]
                     _v.tx_queue_len(1000);
                 })
