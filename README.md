@@ -17,16 +17,16 @@ Options:
 
 ## Features
 
-| Features             |   |
-|----------------------|---| 
-| ***Decentralized***  | ✅ |
-| ***Cross-platform*** | ✅ |
-| ***NAT traversal***  | ✅ | 
-| ***Subnet route***   | ✅ | 
-| ***Encryption***     | ✅ | 
-| ***Efficient***      | ✅ | 
-| ***IPv6/Ipv4***      | ✅ | 
-| ***UDP/TCP***        | ✅ | 
+| Features           |   |
+|--------------------|---| 
+| **Decentralized**  | ✅ |
+| **Cross-platform** | ✅ |
+| **NAT traversal**  | ✅ | 
+| **Subnet route**   | ✅ | 
+| **Encryption**     | ✅ | 
+| **Efficient**      | ✅ | 
+| **IPv6/Ipv4**      | ✅ | 
+| **UDP/TCP**        | ✅ | 
 
 ## Quick Start
 
@@ -66,39 +66,95 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-   subgraph Node-A 8.210.54.141
-      node_a[10.26.1.2/24]
-   end
-   subgraph Node-B
-      node_b[10.26.1.3/24]
-   end
+    subgraph Node-A 8.210.54.141
+        node_a[10.26.1.2/24]
+    end
+    subgraph Node-B
+        node_b[10.26.1.3/24]
+    end
 
-   subgraph Node-C 192.168.1.2
-      node_c[10.26.1.4/24]
-   end
-   subgraph Node-D
-      node_d[10.26.1.5/24]
-   end
-   node_b -----> node_a
-   node_c -----> node_a
-   node_d -----> node_c
+    subgraph Node-C 192.168.1.2
+        node_c[10.26.1.4/24]
+    end
+    subgraph Node-D
+        node_d[10.26.1.5/24]
+    end
+    node_b -----> node_a
+    node_c -----> node_a
+    node_d -----> node_c
 ```
+
 ```
 Node-A: ./netLink --group-code 123 --local 10.26.1.2/24
 Node-B: ./netLink --group-code 123 --local 10.26.1.3/24 --peer 8.210.54.141:23333
 Node-C: ./netLink --group-code 123 --local 10.26.1.4/24 --peer 8.210.54.141:23333
 Node-D: ./netLink --group-code 123 --local 10.26.1.4/24 --peer 192.168.1.2:23333
 ```
-All connected nodes can access each other. 
+
+All connected nodes can access each other.
 
 Furthermore, multiple nodes can be connected using '-peer'.  
 example：
+
 ```
 Node-A: ./netLink --group-code 123 --local 10.26.1.2/24
 Node-B: ./netLink --group-code 123 --local 10.26.1.3/24 --peer 8.210.54.141:23333
 Node-C: ./netLink --group-code 123 --local 10.26.1.4/24 --peer 8.210.54.141:23333
 Node-D: ./netLink --group-code 123 --local 10.26.1.4/24 --peer 192.168.1.2:23333 --peer 8.210.54.141:23333
 ```
+
+## Subnet route
+
+```
+Public Node-S: 8.210.54.141
+
+Subnet 1: 192.168.10.0/24
+      Node-A: 192.168.10.2
+      Node-B: 192.168.10.3
+      
+Other subnet:   
+      Node-C
+
+Node-S: ./netLink --group-code xxxx --local 10.26.1.1
+Node-A: ./netLink --group-code 123 --local 10.26.1.3/24 --peer 8.210.54.141:23333
+Node-C: ./netLink --group-code 123 --local 10.26.1.4/24 --peer 8.210.54.141:23333
+
+Node-C --> Node-B(192.168.10.3) ?
+```
+
+1. Step 1 : Node-A Configure network card forwarding
+
+   **Linux**
+   ```
+   sudo sysctl -w net.ipv4.ip_forward=1
+   sudo iptables -t nat -A POSTROUTING  -o eth0 -s 10.26.1.0/24 -j MASQUERADE
+   ```
+   **Windows**
+   ```
+   New-NetNat -Name testSubnet -InternalIPInterfaceAddressPrefix 10.26.1.0/24
+   ```
+   **Macos**
+   ```
+   sudo sysctl -w net.ipv4.ip_forward=1
+   echo "nat on en0 from 10.26.1.0/24 to any -> (en0)" | sudo tee -a /etc/pf.conf
+   sudo pfctl -f /etc/pf.conf -e
+   ```
+2. Step 2 : Node-C Configure route
+
+   **Linux**
+   ```
+   sudo ip route add 192.168.10.0/24 via 10.26.1.3 dev <netLink_tun_name>
+   ```
+   **Windows**
+   ```
+   route add 192.168.10.0 mask 255.255.255.0 10.26.1.3 if <netLink_tun_index>
+   ```
+   **Macos**
+   ```
+   sudo route -n add 192.168.10.0/24 10.26.1.3 -interface <netLink_tun_name>
+   ```
+
+At this point, Node-C can directly access the IP address of Node-B(192.168.10.3)
 
 ## Free community nodes
 
