@@ -52,6 +52,9 @@ struct Args {
     /// Global exit node,please use it together with '--bind-dev'
     #[arg(long)]
     exit_node: Option<Ipv4Addr>,
+    /// Set tun name
+    #[arg(long)]
+    tun_name: Option<String>,
 }
 
 pub fn main() -> Result<()> {
@@ -84,6 +87,7 @@ async fn run(args: Args) -> Result<()> {
         encrypt,
         algorithm,
         exit_node,
+        tun_name,
         ..
     } = args;
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
@@ -157,20 +161,22 @@ async fn run(args: Args) -> Result<()> {
     let shutdown_writer = writer.clone();
     let (sender, mut receiver) = tokio::sync::mpsc::channel::<RecvUserData>(256);
     if prefix > 0 {
-        let device = tun_rs::create_as_async(
-            tun_rs::Configuration::default()
-                .address_with_prefix(self_id, prefix)
-                .platform_config(|_v| {
-                    #[cfg(windows)]
-                    {
-                        _v.ring_capacity(4 * 1024 * 1024);
-                        _v.metric(0);
-                    }
-                })
-                .mtu(1400)
-                .up(),
-        )
-        .unwrap();
+        let mut config = tun_rs::Configuration::default();
+        config
+            .address_with_prefix(self_id, prefix)
+            .platform_config(|_v| {
+                #[cfg(windows)]
+                {
+                    _v.ring_capacity(4 * 1024 * 1024);
+                    _v.metric(0);
+                }
+            })
+            .mtu(1400)
+            .up();
+        if let Some(name) = tun_name {
+            config.name(name);
+        }
+        let device = tun_rs::create_as_async(&config).unwrap();
         #[cfg(target_os = "linux")]
         if let Err(e) = device.set_tx_queue_len(1000) {
             log::warn!("set tx_queue_len failed. {e:?}");
