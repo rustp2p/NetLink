@@ -308,6 +308,9 @@ async fn tun_recv(
         let payload_len = device.recv(&mut send_packet).await?;
         unsafe { send_packet.set_payload_len(payload_len) };
         let buf: &mut [u8] = &mut send_packet;
+        if buf.len() < 20 {
+            continue;
+        }
         let mut v6 = false;
         let mut dest_ip = if buf[0] >> 4 != 4 {
             if let Some(ipv6_packet) = pnet_packet::ipv6::Ipv6Packet::new(buf) {
