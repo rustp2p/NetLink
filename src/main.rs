@@ -166,13 +166,15 @@ async fn run(args: Args) -> Result<()> {
                         _v.ring_capacity(4 * 1024 * 1024);
                         _v.metric(0);
                     }
-                    #[cfg(target_os = "linux")]
-                    _v.tx_queue_len(1000);
                 })
                 .mtu(1400)
                 .up(),
         )
         .unwrap();
+        #[cfg(target_os = "linux")]
+        if let Err(e) = device.set_tx_queue_len(1000) {
+            log::warn!("set tx_queue_len failed. {e:?}");
+        }
         let if_index = device.if_index().unwrap();
         let name = device.name().unwrap();
         log::info!("device index={if_index},name={name}",);
