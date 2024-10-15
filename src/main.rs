@@ -15,6 +15,7 @@ use tokio::sync::mpsc::Sender;
 
 mod cipher;
 mod exit_route;
+mod ipc;
 mod platform;
 mod route_listen;
 
@@ -112,7 +113,7 @@ async fn run(args: Args) -> Result<()> {
     .await;
 
     let port = port.unwrap_or(23333);
-    let udp_config = UdpPipeConfig::default().set_udp_ports(vec![port]);
+    let udp_config = UdpPipeConfig::default().set_simple_udp_port(port);
     let tcp_config = TcpPipeConfig::default().set_tcp_port(port);
     let mut config = PipeConfig::empty()
         .set_udp_pipe_config(udp_config)
