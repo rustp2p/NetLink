@@ -181,8 +181,11 @@ async fn run(args: Args) -> Result<()> {
         ];
         v6[12..].copy_from_slice(&self_id.octets());
         let v6 = Ipv6Addr::from(v6);
-        log::info!("mapped ipv6 addr={v6}");
-        device.add_address_v6(v6.into(), 96).unwrap();
+        if let Err(e) = device.add_address_v6(v6.into(), 96) {
+            log::warn!("add ipv6 failed. {e:?},v6={v6}");
+        } else {
+            log::info!("mapped ipv6 addr={v6}");
+        }
         let external_route = ExternalRoute::new(self_id, prefix);
         route_listen::route_listen(if_index, external_route.clone()).await?;
         if let Some(exit_node) = exit_node {
