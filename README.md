@@ -15,7 +15,76 @@ Options:
       --exit-node <EXIT_NODE>    Global exit node,please use it together with '--bind-dev'
  ```
 
+## Features
 
-### Free community nodes
+| Features             |   |
+|----------------------|---| 
+| ***Decentralized***  | ✅ |
+| ***Cross-platform*** | ✅ |
+| ***NAT traversal***  | ✅ | 
+| ***Subnet route***   | ✅ | 
+| ***Encryption***     | ✅ | 
+| ***Efficient***      | ✅ | 
+| ***IPv6/Ipv4***      | ✅ | 
+| ***UDP/TCP***        | ✅ | 
+
+## Quick Start
+
+```mermaid
+flowchart LR
+    subgraph Node-A 8.210.54.141
+        node_a[10.26.1.2/24]
+    end
+    subgraph Node-B
+        node_b[10.26.1.3/24]
+    end
+
+    subgraph Node-C
+        node_c[10.26.1.4/24]
+    end
+
+    node_a <-----> node_b
+    node_c <-----> node_b
+    node_a <-----> node_c
+```
+
+1. Node-A
+    ```
+    ./netLink --group-code 123 --local 10.26.1.2/24
+    ```
+2. Node-B
+    ```
+    ./netLink --group-code 123 --local 10.26.1.3/24 --peer 8.210.54.141:23333
+    ```
+3. Node-C
+    ```
+    ./netLink --group-code 123 --local 10.26.1.4/24 --peer 8.210.54.141:23333
+    ```
+4. Nodes A, B, and C can access each other
+
+## Multi Node
+
+```mermaid
+flowchart LR
+   subgraph Node-A 8.210.54.141
+      node_a[10.26.1.2/24]
+   end
+   subgraph Node-B
+      node_b[10.26.1.3/24]
+   end
+
+   subgraph Node-C
+      node_c[10.26.1.4/24]
+   end
+   subgraph Node-D
+      node_d[10.26.1.5/24]
+   end
+   node_b -----> node_a
+   node_c -----> node_a
+   node_d -----> node_c
+```
+Node-D and Node-C can access each other
+
+## Free community nodes
 
 - --peer tcp://198.46.149.74:23333
