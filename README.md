@@ -73,7 +73,7 @@ flowchart LR
       node_b[10.26.1.3/24]
    end
 
-   subgraph Node-C
+   subgraph Node-C 192.168.1.2
       node_c[10.26.1.4/24]
    end
    subgraph Node-D
@@ -83,7 +83,22 @@ flowchart LR
    node_c -----> node_a
    node_d -----> node_c
 ```
-Node-D and Node-C can access each other
+```
+Node-A: ./netLink --group-code 123 --local 10.26.1.2/24
+Node-B: ./netLink --group-code 123 --local 10.26.1.3/24 --peer 8.210.54.141:23333
+Node-C: ./netLink --group-code 123 --local 10.26.1.4/24 --peer 8.210.54.141:23333
+Node-D: ./netLink --group-code 123 --local 10.26.1.4/24 --peer 192.168.1.2:23333
+```
+All connected nodes can access each other. 
+
+Furthermore, multiple nodes can be connected using '-peer'.  
+example：
+```
+Node-A: ./netLink --group-code 123 --local 10.26.1.2/24
+Node-B: ./netLink --group-code 123 --local 10.26.1.3/24 --peer 8.210.54.141:23333
+Node-C: ./netLink --group-code 123 --local 10.26.1.4/24 --peer 8.210.54.141:23333
+Node-D: ./netLink --group-code 123 --local 10.26.1.4/24 --peer 192.168.1.2:23333 --peer 8.210.54.141:23333
+```
 
 ## Free community nodes
 
