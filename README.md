@@ -122,7 +122,7 @@ Node-C: ./netLink --group-code 123 --local 10.26.1.4/24 --peer 8.210.54.141:2333
 Node-C --> Node-B(192.168.10.3) ?
 ```
 
-1. Step 1 : Node-A Configure network card forwarding
+1. **Step 1 : Node-A Configure network card forwarding**
 
    **Linux**
    ```
@@ -139,7 +139,7 @@ Node-C --> Node-B(192.168.10.3) ?
    echo "nat on en0 from 10.26.1.0/24 to any -> (en0)" | sudo tee -a /etc/pf.conf
    sudo pfctl -f /etc/pf.conf -e
    ```
-2. Step 2 : Node-C Configure route
+2. **Step 2 : Node-C Configure route**
 
    **Linux**
    ```
