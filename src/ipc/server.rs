@@ -1,5 +1,6 @@
 use crate::ipc::common::{GroupItem, RouteItem};
 use rustp2p::pipe::PipeWriter;
+use rustp2p::protocol::node_id::GroupCode;
 use std::io;
 use std::net::Ipv4Addr;
 use tokio::net::UdpSocket;
@@ -34,47 +35,10 @@ async fn start0(udp: UdpSocket, pipe_writer: PipeWriter) -> io::Result<()> {
     }
 }
 async fn handle(cmd: &str, pipe_writer: &PipeWriter) -> io::Result<String> {
-    match cmd.trim() {
+    let cmd = cmd.trim();
+    match cmd {
         "nodes" => {
-            let mut list = Vec::new();
-            for node_id in pipe_writer.nodes() {
-                if let Some(routes) = pipe_writer.lookup_route(&node_id) {
-                    let not_empty = !routes.is_empty();
-                    for route in routes {
-                        let next_hop = if route.is_relay() {
-                            pipe_writer
-                                .route_to_node_id(&route.route_key())
-                                .map(|v| format!("{}", Ipv4Addr::from(v)))
-                        } else {
-                            Some("Direct-Connection".to_string())
-                        };
-
-                        list.push(RouteItem {
-                            node_id: format!("{}", Ipv4Addr::from(node_id)),
-                            next_hop: next_hop.unwrap_or_default(),
-                            protocol: format!("{:?}", route.route_key().protocol()),
-                            metric: route.metric(),
-                            rtt: route.rtt(),
-                        })
-                    }
-                    if not_empty {
-                        continue;
-                    }
-                }
-                list.push(RouteItem {
-                    node_id: format!("{}", Ipv4Addr::from(node_id)),
-                    next_hop: String::new(),
-                    protocol: "Not linked".to_string(),
-                    metric: 0,
-                    rtt: 0,
-                })
-            }
-            match serde_json::to_string(&list) {
-                Ok(rs) => return Ok(rs),
-                Err(e) => {
-                    log::debug!("cmd=nodes,err={e:?}");
-                }
-            }
+            return current_nodes(pipe_writer).await;
         }
         "groups" => {
             let mut group_codes = Vec::new();
@@ -96,17 +60,11 @@ async fn handle(cmd: &str, pipe_writer: &PipeWriter) -> io::Result<String> {
                     .other_group_nodes(&code)
                     .map(|v| v.len())
                     .unwrap_or_default();
-                if let Ok(group_code) = String::from_utf8(code.as_ref().to_vec()) {
-                    group_codes.push(GroupItem {
-                        group_code,
-                        node_num,
-                    });
-                } else {
-                    group_codes.push(GroupItem {
-                        group_code: format!("{:?}", code.as_ref()),
-                        node_num,
-                    })
-                }
+                let group_code = group_code_to_string(&code);
+                group_codes.push(GroupItem {
+                    group_code,
+                    node_num,
+                });
             }
             match serde_json::to_string(&group_codes) {
                 Ok(rs) => return Ok(rs),
@@ -115,7 +73,118 @@ async fn handle(cmd: &str, pipe_writer: &PipeWriter) -> io::Result<String> {
                 }
             }
         }
-        _ => {}
+        _ => {
+            if let Some(group_code) = cmd.strip_prefix("other_nodes_") {
+                if let Some(group_code) = crate::string_to_group_code(group_code) {
+                    let current_group_code = pipe_writer.current_group_code();
+                    if group_code == current_group_code {
+                        return current_nodes(pipe_writer).await;
+                    }
+                    return other_nodes(pipe_writer, &group_code).await;
+                }
+            }
+        }
     }
     Ok("error".to_string())
+}
+
+async fn current_nodes(pipe_writer: &PipeWriter) -> io::Result<String> {
+    let mut list = Vec::new();
+    for node_id in pipe_writer.nodes() {
+        if let Some(routes) = pipe_writer.lookup_route(&node_id) {
+            let not_empty = !routes.is_empty();
+            for route in routes {
+                let next_hop = if route.is_relay() {
+                    pipe_writer
+                        .route_to_node_id(&route.route_key())
+                        .map(|v| format!("{}", Ipv4Addr::from(v)))
+                } else {
+                    Some("Direct-Connection".to_string())
+                };
+
+                list.push(RouteItem {
+                    node_id: format!("{}", Ipv4Addr::from(node_id)),
+                    next_hop: next_hop.unwrap_or_default(),
+                    protocol: format!("{:?}", route.route_key().protocol()),
+                    metric: route.metric(),
+                    rtt: route.rtt(),
+                })
+            }
+            if not_empty {
+                continue;
+            }
+        }
+        list.push(RouteItem {
+            node_id: format!("{}", Ipv4Addr::from(node_id)),
+            next_hop: String::new(),
+            protocol: "Not linked".to_string(),
+            metric: 0,
+            rtt: 0,
+        })
+    }
+    match serde_json::to_string(&list) {
+        Ok(rs) => Ok(rs),
+        Err(e) => {
+            log::debug!("cmd=nodes,err={e:?}");
+            Ok("error".to_string())
+        }
+    }
+}
+
+async fn other_nodes(pipe_writer: &PipeWriter, group_code: &GroupCode) -> io::Result<String> {
+    let mut list = Vec::new();
+    let nodes = if let Some(nodes) = pipe_writer.other_group_nodes(group_code) {
+        nodes
+    } else {
+        return Ok(String::new());
+    };
+    for node_id in nodes {
+        if let Some(routes) = pipe_writer.other_group_route(group_code, &node_id) {
+            let not_empty = !routes.is_empty();
+            for route in routes {
+                let next_hop = if route.is_relay() {
+                    pipe_writer
+                        .other_route_to_node_id(group_code, &route.route_key())
+                        .map(|v| format!("{}", Ipv4Addr::from(v)))
+                } else {
+                    Some("Direct-Connection".to_string())
+                };
+
+                list.push(RouteItem {
+                    node_id: format!("{}", Ipv4Addr::from(node_id)),
+                    next_hop: next_hop.unwrap_or_default(),
+                    protocol: format!("{:?}", route.route_key().protocol()),
+                    metric: route.metric(),
+                    rtt: route.rtt(),
+                })
+            }
+            if not_empty {
+                continue;
+            }
+        }
+        list.push(RouteItem {
+            node_id: format!("{}", Ipv4Addr::from(node_id)),
+            next_hop: String::new(),
+            protocol: "Not linked".to_string(),
+            metric: 0,
+            rtt: 0,
+        })
+    }
+    match serde_json::to_string(&list) {
+        Ok(rs) => Ok(rs),
+        Err(e) => {
+            log::debug!("cmd=nodes,err={e:?}");
+            Ok("error".to_string())
+        }
+    }
+}
+fn group_code_to_string(group_code: &GroupCode) -> String {
+    let mut vec = group_code.as_ref().to_vec();
+    if let Some(pos) = vec.iter().rposition(|&x| x != 0) {
+        vec.truncate(pos + 1);
+    }
+    match String::from_utf8(vec) {
+        Ok(group_code) => group_code,
+        Err(_) => format!("{:?}", group_code.as_ref()),
+    }
 }

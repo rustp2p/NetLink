@@ -80,6 +80,9 @@ enum Commands {
         /// View all group codes
         #[arg(long)]
         groups: bool,
+        /// View all nodes in the group code
+        #[arg(long)]
+        others: Option<String>,
     },
 }
 const CMD_PORT: u16 = 23336;
@@ -118,6 +121,7 @@ async fn client_cmd(args: ArgsBack) {
         cmd_port,
         nodes,
         groups,
+        others,
     } = args.command;
     if nodes {
         if let Err(e) = ipc::client::nodes(cmd_port.unwrap_or(CMD_PORT)).await {
@@ -127,6 +131,12 @@ async fn client_cmd(args: ArgsBack) {
         if let Err(e) = ipc::client::groups(cmd_port.unwrap_or(CMD_PORT)).await {
             println!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}");
         }
+    } else if let Some(group_code) = others {
+        if let Err(e) = ipc::client::other_nodes(cmd_port.unwrap_or(CMD_PORT), group_code).await {
+            println!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}");
+        }
+    } else {
+        println!("Use specific commands to view data");
     }
 }
 #[tokio::main(flavor = "current_thread")]
@@ -172,11 +182,17 @@ async fn run(args: Args) -> Result<()> {
     let port = port.unwrap_or(LISTEN_PORT);
     let udp_config = UdpPipeConfig::default().set_simple_udp_port(port);
     let tcp_config = TcpPipeConfig::default().set_tcp_port(port);
+    let group_code = if let Some(group_code) = string_to_group_code(&group_code) {
+        group_code
+    } else {
+        println!("--group-code is too long");
+        return Ok(());
+    };
     let mut config = PipeConfig::empty()
         .set_udp_pipe_config(udp_config)
         .set_tcp_pipe_config(tcp_config)
         .set_direct_addrs(addrs)
-        .set_group_code(string_to_group_code(&group_code))
+        .set_group_code(group_code)
         .set_node_id(self_id.into());
     if let Some(bind_dev_name) = bind_dev {
         let _bind_dev_index = match platform::dev_name_to_index(&bind_dev_name) {
@@ -325,12 +341,15 @@ async fn run(args: Args) -> Result<()> {
     Ok(())
 }
 
-fn string_to_group_code(input: &str) -> GroupCode {
+fn string_to_group_code(input: &str) -> Option<GroupCode> {
     let mut array = [0u8; 16];
     let bytes = input.as_bytes();
-    let len = bytes.len().min(16);
+    if bytes.len() > 16 {
+        return None;
+    }
+    let len = bytes.len();
     array[..len].copy_from_slice(&bytes[..len]);
-    array.into()
+    Some(array.into())
 }
 
 fn gen_salt(src_id: &NodeID, dest_id: &NodeID) -> [u8; 12] {

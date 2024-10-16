@@ -28,6 +28,21 @@ pub async fn nodes(port: u16) -> io::Result<()> {
     Ok(())
 }
 
+pub async fn other_nodes(port: u16, group_code: String) -> io::Result<()> {
+    let mut buf = [0; 4096];
+    let len = recv(&format!("other_nodes_{group_code}"), port, &mut buf).await?;
+    match serde_json::from_slice::<Vec<RouteItem>>(&buf[..len]) {
+        Ok(rs) => {
+            let table = Table::new(rs).to_string();
+            println!("{table}");
+        }
+        Err(e) => {
+            log::warn!("other_nodes error {e}");
+        }
+    }
+    Ok(())
+}
+
 pub async fn groups(port: u16) -> io::Result<()> {
     let mut buf = [0; 4096];
     let len = recv("groups", port, &mut buf).await?;
