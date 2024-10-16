@@ -201,19 +201,19 @@ jobs:
           mkdir -p ./artifacts
           # windows is the only OS using a different convention for executable file name
           if [[ $OS =~ ^windows.*$ ]]; then
-              EXEC_NetLink=net_link.exe
-              netLink=netLink.exe
+              EXEC_NETLINK=net_link.exe
+              NETLINK=netlink.exe
           else
-              EXEC_NetLink=net_link
-              netLink=netLink
+              EXEC_NETLINK=net_link
+              NETLINK=netlink
           fi
           if [[ $GITHUB_REF_TYPE =~ ^tag$ ]]; then
             TAG=$GITHUB_REF_NAME
           else
             TAG=$GITHUB_SHA
           fi
-          mv ./target/$TARGET/release/$EXEC_NetLink ./$netLink
-          tar -czf ./artifacts/NetLink-$TARGET-$TAG.tar.gz ./$netLink
+          mv ./target/$TARGET/release/$EXEC_NETLINK ./$NETLINK
+          tar -czf ./artifacts/netlink-$TARGET-$TAG.tar.gz ./$NETLINK
       - name: List target NetLink
         run: find ./artifacts
       - name: Archive artifact
