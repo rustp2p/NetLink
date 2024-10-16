@@ -308,6 +308,9 @@ async fn tun_recv(
         let payload_len = device.recv(&mut send_packet).await?;
         unsafe { send_packet.set_payload_len(payload_len) };
         let buf: &mut [u8] = &mut send_packet;
+        if buf.len() < 20 {
+            continue;
+        }
         let mut v6 = false;
         let mut dest_ip = if buf[0] >> 4 != 4 {
             if let Some(ipv6_packet) = pnet_packet::ipv6::Ipv6Packet::new(buf) {
@@ -350,11 +353,11 @@ async fn tun_recv(
         if let Some(cipher) = cipher.as_ref() {
             send_packet.resize(payload_len + cipher.reserved_len(), 0);
             if let Err(e) = cipher.encrypt(gen_salt(&self_id, &dest_id), &mut send_packet) {
-                log::warn!("encrypt,{dest_ip:?} {e:?}")
-            } else if let Err(e) = pipe_writer.send_packet_to(send_packet, &dest_id).await {
-                log::debug!("discard,{dest_ip:?}:{:?} {e:?}", dest_id.as_ref())
+                log::warn!("encrypt,{dest_ip:?} {e:?}");
+                continue;
             }
-        } else if let Err(e) = pipe_writer.send_packet_to(send_packet, &dest_id).await {
+        }
+        if let Err(e) = pipe_writer.send_packet_to(send_packet, &dest_id).await {
             log::debug!("discard,{dest_ip:?}:{:?} {e:?}", dest_id.as_ref())
         }
     }
