@@ -1,5 +1,6 @@
 use clap::Parser;
 use env_logger::Env;
+use std::io;
 
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
@@ -56,10 +57,49 @@ struct Args {
     /// Set tun name
     #[arg(long)]
     tun_name: Option<String>,
+    #[command(subcommand)]
+    command: Option<Commands>,
 }
+#[derive(Parser, Debug)]
+struct ArgsBack {
+    #[arg(long)]
+    cmd_port: Option<u16>,
+    #[command(subcommand)]
+    command: Commands,
+}
+#[derive(clap::Subcommand, Debug)]
+enum Commands {
+    /// Backend command
+    Cmd {
+        /// When opening multiple programs, this port needs to be set. default 23336
+        #[arg(long)]
+        cmd_port: Option<u16>,
+        /// View all nodes in the current group
+        #[arg(long)]
+        nodes: bool,
+        /// View all group codes
+        #[arg(long)]
+        groups: bool,
+    },
+}
+const CMD_PORT: u16 = 23336;
+const LISTEN_PORT: u16 = 23333;
 
 pub fn main() -> Result<()> {
-    let args = Args::parse();
+    let args = match Args::try_parse() {
+        Ok(arg) => arg,
+        Err(e) => {
+            match ArgsBack::try_parse() {
+                Ok(args) => {
+                    client_cmd(args);
+                }
+                Err(_) => {
+                    println!("{e}");
+                }
+            }
+            return Ok(());
+        }
+    };
     let worker_threads = args.threads.unwrap_or(2);
     if worker_threads <= 1 {
         main_current_thread(args)
@@ -72,7 +112,23 @@ pub fn main() -> Result<()> {
             .block_on(run(args))
     }
 }
-
+#[tokio::main(flavor = "current_thread")]
+async fn client_cmd(args: ArgsBack) {
+    let Commands::Cmd {
+        cmd_port,
+        nodes,
+        groups,
+    } = args.command;
+    if nodes {
+        if let Err(e) = ipc::client::nodes(cmd_port.unwrap_or(CMD_PORT)).await {
+            println!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}");
+        }
+    } else if groups {
+        if let Err(e) = ipc::client::groups(cmd_port.unwrap_or(CMD_PORT)).await {
+            println!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}");
+        }
+    }
+}
 #[tokio::main(flavor = "current_thread")]
 async fn main_current_thread(args: Args) -> Result<()> {
     run(args).await
@@ -89,6 +145,7 @@ async fn run(args: Args) -> Result<()> {
         algorithm,
         exit_node,
         tun_name,
+        command,
         ..
     } = args;
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
@@ -112,7 +169,7 @@ async fn run(args: Args) -> Result<()> {
     })
     .await;
 
-    let port = port.unwrap_or(23333);
+    let port = port.unwrap_or(LISTEN_PORT);
     let udp_config = UdpPipeConfig::default().set_simple_udp_port(port);
     let tcp_config = TcpPipeConfig::default().set_tcp_port(port);
     let mut config = PipeConfig::empty()
@@ -159,6 +216,18 @@ async fn run(args: Args) -> Result<()> {
 
     let mut pipe = Pipe::new(config).await?;
     let writer = pipe.writer();
+    let cmd_port = if let Some(Commands::Cmd { cmd_port, .. }) = command {
+        cmd_port.unwrap_or(CMD_PORT)
+    } else {
+        CMD_PORT
+    };
+    if let Err(e) = ipc::server::start(cmd_port, writer.clone()).await {
+        if e.kind() == io::ErrorKind::AddrInUse {
+            println!("The backend command port has already been used. Please use '--cmd-port' to change the port");
+        }
+        println!("The backend command port has already been used. Please use '--cmd-port' to change the port, err={e}");
+        return Ok(());
+    }
     let shutdown_writer = writer.clone();
     let (sender, mut receiver) = tokio::sync::mpsc::channel::<RecvUserData>(256);
     if prefix > 0 {
