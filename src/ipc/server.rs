@@ -35,7 +35,7 @@ async fn start0(udp: UdpSocket, pipe_writer: PipeWriter) -> io::Result<()> {
 }
 async fn handle(cmd: &str, pipe_writer: &PipeWriter) -> io::Result<String> {
     match cmd.trim() {
-        "list" => {
+        "nodes" => {
             let mut list = Vec::new();
             for node_id in pipe_writer.nodes() {
                 if let Some(routes) = pipe_writer.lookup_route(&node_id) {
@@ -52,7 +52,7 @@ async fn handle(cmd: &str, pipe_writer: &PipeWriter) -> io::Result<String> {
                         list.push(RouteItem {
                             node_id: format!("{}", Ipv4Addr::from(node_id)),
                             next_hop: next_hop.unwrap_or_default(),
-                            protocol: format!("{:?}",route.route_key().protocol()),
+                            protocol: format!("{:?}", route.route_key().protocol()),
                             metric: route.metric(),
                             rtt: route.rtt(),
                         })
@@ -72,33 +72,46 @@ async fn handle(cmd: &str, pipe_writer: &PipeWriter) -> io::Result<String> {
             match serde_json::to_string(&list) {
                 Ok(rs) => return Ok(rs),
                 Err(e) => {
-                    log::debug!("cmd=list,err={e:?}");
+                    log::debug!("cmd=nodes,err={e:?}");
                 }
             }
         }
-        "all_group_code" => {
+        "groups" => {
             let mut group_codes = Vec::new();
-            let code = pipe_writer.current_group_code();
-            match String::from_utf8(code.as_ref().to_vec()) {
-                Ok(group_code) => group_codes.push(GroupItem { group_code }),
+            let current_group_code = pipe_writer.current_group_code();
+            let current_node_num = pipe_writer.nodes().len();
+            match String::from_utf8(current_group_code.as_ref().to_vec()) {
+                Ok(group_code) => group_codes.push(GroupItem {
+                    group_code,
+                    node_num: current_node_num,
+                }),
                 Err(_) => group_codes.push(GroupItem {
-                    group_code: format!("{:?}", code.as_ref()),
+                    group_code: format!("{:?}", current_group_code.as_ref()),
+                    node_num: current_node_num,
                 }),
             }
             let vec = pipe_writer.other_group_codes();
             for code in vec {
+                let node_num = pipe_writer
+                    .other_group_nodes(&code)
+                    .map(|v| v.len())
+                    .unwrap_or_default();
                 if let Ok(group_code) = String::from_utf8(code.as_ref().to_vec()) {
-                    group_codes.push(GroupItem { group_code });
+                    group_codes.push(GroupItem {
+                        group_code,
+                        node_num,
+                    });
                 } else {
                     group_codes.push(GroupItem {
                         group_code: format!("{:?}", code.as_ref()),
+                        node_num,
                     })
                 }
             }
             match serde_json::to_string(&group_codes) {
                 Ok(rs) => return Ok(rs),
                 Err(e) => {
-                    log::debug!("cmd=all_group_code,err={e:?}");
+                    log::debug!("cmd=groups,err={e:?}");
                 }
             }
         }

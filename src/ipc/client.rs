@@ -15,7 +15,7 @@ async fn recv(cmd: &str, port: u16, buf: &mut [u8]) -> io::Result<usize> {
 }
 pub async fn nodes(port: u16) -> io::Result<()> {
     let mut buf = [0; 4096];
-    let len = recv("list", port, &mut buf).await?;
+    let len = recv("nodes", port, &mut buf).await?;
     match serde_json::from_slice::<Vec<RouteItem>>(&buf[..len]) {
         Ok(rs) => {
             let table = Table::new(rs).to_string();
@@ -30,7 +30,7 @@ pub async fn nodes(port: u16) -> io::Result<()> {
 
 pub async fn groups(port: u16) -> io::Result<()> {
     let mut buf = [0; 4096];
-    let len = recv("all_group_code", port, &mut buf).await?;
+    let len = recv("groups", port, &mut buf).await?;
     match serde_json::from_slice::<Vec<GroupItem>>(&buf[..len]) {
         Ok(rs) => {
             let table = Table::new(rs).to_string();
