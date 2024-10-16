@@ -25,21 +25,21 @@ struct Args {
     /// e.g.: -p tcp://192.168.10.13:23333 -p udp://192.168.10.23:23333
     #[arg(short, long)]
     peer: Option<Vec<String>>,
-    /// Local node IP and prefix.
+    /// Local node IP and prefix.If there is no 'prefix', Will not enable Tun.
     /// e.g.: -l 10.26.0.2/24
     #[arg(short, long, value_name = "LOCAL IP")]
     local: String,
     /// Nodes with the same group_code can form a network (Maximum length 16).
     #[arg(short, long, value_name = "GROUP CODE")]
     group_code: String,
-    /// Listen local port
+    /// Listen local port, default is 23333
     #[arg(short = 'P', long)]
     port: Option<u16>,
     /// Bind the outgoing network interface (using the interface name).
     /// e.g.: -b eth0
     #[arg(short, long, value_name = "DEVICE NAME")]
     bind_dev: Option<String>,
-    /// Set the number of threads, default to 2
+    /// Set the number of threads, default is 2
     #[arg(long)]
     threads: Option<usize>,
     /// Enable data encryption.
