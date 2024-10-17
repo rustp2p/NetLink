@@ -1,13 +1,41 @@
 use crate::ipc::http::entity::ApiResponse;
-use crate::ipc::server::current_info;
-use rustp2p::pipe::PipeWriter;
-use warp::Filter;
+use crate::ipc::service::ApiService;
+use actix_web::web::Data;
+use actix_web::{App, HttpResponse, HttpServer};
+use std::{net, thread};
 
-pub async fn start(port: u16, pipe_writer: &PipeWriter) {
-    let info_ = pipe_writer.clone();
-    // let hello = warp::path!("info" / String).map(|name| match current_info(&info_) {
-    //     Ok(rs) => ApiResponse::success(rs).to_json(),
-    //     Err(e) => ApiResponse::failed(format!("{e:?}")).to_json(),
-    // });
-    // warp::serve(hello).run(([127, 0, 0, 1], port)).await;
+#[actix_web::get("/api/current-info")]
+async fn current_info(service: Data<ApiService>) -> HttpResponse {
+    match service.current_info() {
+        Ok(rs) => HttpResponse::Ok().json(ApiResponse::success(rs)),
+        Err(e) => HttpResponse::Ok().json(ApiResponse::failed(format!("{e}"))),
+    }
+}
+
+pub async fn start(port: u16, api_service: ApiService) -> anyhow::Result<()> {
+    let listener = net::TcpListener::bind(format!("127.0.0.1:{port}"))?;
+    thread::spawn(move || {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                if let Err(e) = start0(listener, api_service).await {
+                    log::warn!("web api {e:?}")
+                }
+            });
+    });
+    Ok(())
+}
+
+async fn start0(listener: net::TcpListener, api_service: ApiService) -> anyhow::Result<()> {
+    HttpServer::new(move || {
+        App::new()
+            .app_data(Data::new(api_service.clone()))
+            .service(current_info)
+    })
+    .listen(listener)?
+    .run()
+    .await?;
+    Ok(())
 }

@@ -15,7 +15,7 @@ impl<T> ApiResponse<T> {
     }
 }
 impl<T: Serialize> ApiResponse<T> {
-    pub fn to_json(&self) -> String {
+    pub fn _to_json(&self) -> String {
         serde_json::to_string(&self).unwrap_or_else(|_e| {
             let json_str = r#"{"code": 400, "data": "failed"}"#;
             json_str.to_string()

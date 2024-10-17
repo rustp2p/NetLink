@@ -1,6 +1,5 @@
 use clap::Parser;
 use env_logger::Env;
-use std::io;
 
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
@@ -128,19 +127,21 @@ async fn client_cmd(args: ArgsBack) {
         others,
     } = args.command;
     if nodes {
-        if let Err(e) = ipc::client::nodes(cmd_port.unwrap_or(CMD_PORT)).await {
+        if let Err(e) = ipc::udp::client::nodes(cmd_port.unwrap_or(CMD_PORT)).await {
             println!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}");
         }
     } else if groups {
-        if let Err(e) = ipc::client::groups(cmd_port.unwrap_or(CMD_PORT)).await {
+        if let Err(e) = ipc::udp::client::groups(cmd_port.unwrap_or(CMD_PORT)).await {
             println!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}");
         }
     } else if let Some(group_code) = others {
-        if let Err(e) = ipc::client::other_nodes(cmd_port.unwrap_or(CMD_PORT), group_code).await {
+        if let Err(e) =
+            ipc::udp::client::other_nodes(cmd_port.unwrap_or(CMD_PORT), group_code).await
+        {
             println!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}");
         }
     } else if info {
-        if let Err(e) = ipc::client::current_info(cmd_port.unwrap_or(CMD_PORT)).await {
+        if let Err(e) = ipc::udp::client::current_info(cmd_port.unwrap_or(CMD_PORT)).await {
             println!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}");
         }
     } else {
@@ -245,10 +246,7 @@ async fn run(args: Args) -> Result<()> {
     } else {
         CMD_PORT
     };
-    if let Err(e) = ipc::server::start(cmd_port, writer.clone()).await {
-        if e.kind() == io::ErrorKind::AddrInUse {
-            println!("The backend command port has already been used. Please use '--cmd-port' to change the port");
-        }
+    if let Err(e) = ipc::server_start(cmd_port, writer.clone()).await {
         println!("The backend command port has already been used. Please use '--cmd-port' to change the port, err={e}");
         return Ok(());
     }
