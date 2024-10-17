@@ -1,4 +1,4 @@
-use crate::ipc::common::{GroupItem, RouteItem};
+use crate::ipc::common::{GroupItem, NetworkNatInfo, RouteItem};
 use rustp2p::pipe::PipeWriter;
 use rustp2p::protocol::node_id::GroupCode;
 use std::io;
@@ -37,6 +37,9 @@ async fn start0(udp: UdpSocket, pipe_writer: PipeWriter) -> io::Result<()> {
 async fn handle(cmd: &str, pipe_writer: &PipeWriter) -> io::Result<String> {
     let cmd = cmd.trim();
     match cmd {
+        "info" => {
+            return current_info(pipe_writer).await;
+        }
         "nodes" => {
             return current_nodes(pipe_writer).await;
         }
@@ -87,7 +90,26 @@ async fn handle(cmd: &str, pipe_writer: &PipeWriter) -> io::Result<String> {
     }
     Ok("error".to_string())
 }
-
+async fn current_info(pipe_writer: &PipeWriter) -> io::Result<String> {
+    let punch_info = pipe_writer.pipe_context().punch_info().read().clone();
+    let info = NetworkNatInfo {
+        local_ipv4: punch_info.local_ipv4,
+        ipv6: punch_info.ipv6,
+        nat_type: punch_info.nat_type,
+        public_ips: punch_info.public_ips,
+        public_udp_ports: punch_info.public_udp_ports,
+        public_tcp_port: punch_info.public_tcp_port,
+        local_udp_ports: punch_info.local_udp_ports,
+        local_tcp_port: punch_info.local_tcp_port,
+    };
+    match serde_json::to_string(&info) {
+        Ok(rs) => Ok(rs),
+        Err(e) => {
+            log::debug!("cmd=current_info,err={e:?}");
+            Ok("error".to_string())
+        }
+    }
+}
 async fn current_nodes(pipe_writer: &PipeWriter) -> io::Result<String> {
     let mut list = Vec::new();
     for node_id in pipe_writer.nodes() {

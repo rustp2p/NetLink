@@ -74,6 +74,9 @@ enum Commands {
         /// When opening multiple programs, this port needs to be set. default 23336
         #[arg(long)]
         cmd_port: Option<u16>,
+        /// View information about the current program
+        #[arg(long)]
+        info: bool,
         /// View all nodes in the current group
         #[arg(long)]
         nodes: bool,
@@ -119,6 +122,7 @@ pub fn main() -> Result<()> {
 async fn client_cmd(args: ArgsBack) {
     let Commands::Cmd {
         cmd_port,
+        info,
         nodes,
         groups,
         others,
@@ -133,6 +137,10 @@ async fn client_cmd(args: ArgsBack) {
         }
     } else if let Some(group_code) = others {
         if let Err(e) = ipc::client::other_nodes(cmd_port.unwrap_or(CMD_PORT), group_code).await {
+            println!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}");
+        }
+    } else if info {
+        if let Err(e) = ipc::client::current_info(cmd_port.unwrap_or(CMD_PORT)).await {
             println!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}");
         }
     } else {
