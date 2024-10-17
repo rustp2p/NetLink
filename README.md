@@ -129,6 +129,7 @@ Node-C <--> Node-A(192.168.10.2) <--> Node-B(192.168.10.3)
 
 1. **Step 1 : Node-A Configure network card forwarding**
   > forward the traffic whose source is within 10.26.1.0/24 to the specified network interface
+
    **Linux**
    ```
    sudo sysctl -w net.ipv4.ip_forward=1
