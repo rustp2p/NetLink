@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 #rustp2p = {version = "0.1.11",features = ["aes-gcm"]}
-rustp2p = {git="https://github.com/rustp2p/rustp2p.git",features = ["chacha20-poly1305","aes-gcm"]}
+rustp2p = { git = "https://github.com/rustp2p/rustp2p.git", features = ["chacha20-poly1305", "aes-gcm"] }
 
 clap = { version = "=4.0.32", features = ["derive"] }
 log = "0.4.22"
@@ -25,12 +25,14 @@ anyhow = "1.0.89"
 tabled = "0.16.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+warp = { version = "0.3", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.59" }
 
 [features]
-default = []
+default = ["web"]
+web = ["warp"]
 
 [profile.release]
 opt-level = 'z'

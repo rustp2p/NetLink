@@ -38,10 +38,10 @@ async fn handle(cmd: &str, pipe_writer: &PipeWriter) -> io::Result<String> {
     let cmd = cmd.trim();
     match cmd {
         "info" => {
-            return current_info(pipe_writer).await;
+            return current_info(pipe_writer);
         }
         "nodes" => {
-            return current_nodes(pipe_writer).await;
+            return current_nodes(pipe_writer);
         }
         "groups" => {
             let mut group_codes = Vec::new();
@@ -81,16 +81,16 @@ async fn handle(cmd: &str, pipe_writer: &PipeWriter) -> io::Result<String> {
                 if let Some(group_code) = crate::string_to_group_code(group_code) {
                     let current_group_code = pipe_writer.current_group_code();
                     if group_code == current_group_code {
-                        return current_nodes(pipe_writer).await;
+                        return current_nodes(pipe_writer);
                     }
-                    return other_nodes(pipe_writer, &group_code).await;
+                    return other_nodes(pipe_writer, &group_code);
                 }
             }
         }
     }
     Ok("error".to_string())
 }
-async fn current_info(pipe_writer: &PipeWriter) -> io::Result<String> {
+pub fn current_info(pipe_writer: &PipeWriter) -> io::Result<String> {
     let punch_info = pipe_writer.pipe_context().punch_info().read().clone();
     let info = NetworkNatInfo {
         local_ipv4: punch_info.local_ipv4,
@@ -110,7 +110,7 @@ async fn current_info(pipe_writer: &PipeWriter) -> io::Result<String> {
         }
     }
 }
-async fn current_nodes(pipe_writer: &PipeWriter) -> io::Result<String> {
+pub fn current_nodes(pipe_writer: &PipeWriter) -> io::Result<String> {
     let mut list = Vec::new();
     for node_id in pipe_writer.nodes() {
         if let Some(routes) = pipe_writer.lookup_route(&node_id) {
@@ -153,7 +153,7 @@ async fn current_nodes(pipe_writer: &PipeWriter) -> io::Result<String> {
     }
 }
 
-async fn other_nodes(pipe_writer: &PipeWriter, group_code: &GroupCode) -> io::Result<String> {
+pub fn other_nodes(pipe_writer: &PipeWriter, group_code: &GroupCode) -> io::Result<String> {
     let mut list = Vec::new();
     let nodes = if let Some(nodes) = pipe_writer.other_group_nodes(group_code) {
         nodes
