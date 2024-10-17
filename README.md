@@ -161,6 +161,10 @@ Node-C --> Node-B(192.168.10.3) ?
 
 At this point, Node-C can directly access the IP address of Node-B(192.168.10.3)
 
+## Contact
+
+- QQ group: 211072783
+
 ## Free community nodes
 
 - --peer tcp://198.46.149.74:23333
