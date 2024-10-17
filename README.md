@@ -124,11 +124,11 @@ Node-S: ./netLink --group-code xxxx --local 10.26.1.1
 Node-A: ./netLink --group-code 123 --local 10.26.1.3/24 --peer 8.210.54.141:23333
 Node-C: ./netLink --group-code 123 --local 10.26.1.4/24 --peer 8.210.54.141:23333
 
-Node-C --> Node-B(192.168.10.3) ?
+Node-C <--> Node-A(192.168.10.2) <--> Node-B(192.168.10.3)
 ```
 
 1. **Step 1 : Node-A Configure network card forwarding**
-
+  > forward the traffic whose source is within 10.26.1.0/24 to the specified network interface
    **Linux**
    ```
    sudo sysctl -w net.ipv4.ip_forward=1
@@ -145,6 +145,7 @@ Node-C --> Node-B(192.168.10.3) ?
    sudo pfctl -f /etc/pf.conf -e
    ```
 2. **Step 2 : Node-C Configure route**
+  > route all traffic whose destination is within 192.168.10.0/24 to 10.26.1.3(i.e. the node_id of Node-A)
 
    **Linux**
    ```
@@ -159,7 +160,7 @@ Node-C --> Node-B(192.168.10.3) ?
    sudo route -n add 192.168.10.0/24 10.26.1.3 -interface <netLink_tun_name>
    ```
 
-At this point, Node-C can directly access the IP address of Node-B(192.168.10.3)
+At this point, Node-C can access the IP address of Node-B(192.168.10.3) via Node-A as if Node-C was directly connected to Node-B.
 
 ## Contact
 
