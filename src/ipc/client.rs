@@ -13,8 +13,9 @@ async fn recv(cmd: &str, port: u16, buf: &mut [u8]) -> io::Result<usize> {
     };
     Ok(len)
 }
+const BUF_SIZE: usize = 1024 * 1024;
 pub async fn current_info(port: u16) -> io::Result<()> {
-    let mut buf = [0; 4096];
+    let mut buf = vec![0; BUF_SIZE];
     let len = recv("info", port, &mut buf).await?;
     match serde_json::from_slice::<NetworkNatInfo>(&buf[..len]) {
         Ok(mut rs) => {
@@ -53,7 +54,7 @@ pub async fn current_info(port: u16) -> io::Result<()> {
 }
 
 pub async fn nodes(port: u16) -> io::Result<()> {
-    let mut buf = [0; 4096];
+    let mut buf = vec![0; BUF_SIZE];
     let len = recv("nodes", port, &mut buf).await?;
     match serde_json::from_slice::<Vec<RouteItem>>(&buf[..len]) {
         Ok(rs) => {
@@ -68,7 +69,7 @@ pub async fn nodes(port: u16) -> io::Result<()> {
 }
 
 pub async fn other_nodes(port: u16, group_code: String) -> io::Result<()> {
-    let mut buf = [0; 4096];
+    let mut buf = vec![0; BUF_SIZE];
     let len = recv(&format!("other_nodes_{group_code}"), port, &mut buf).await?;
     match serde_json::from_slice::<Vec<RouteItem>>(&buf[..len]) {
         Ok(rs) => {
@@ -83,7 +84,7 @@ pub async fn other_nodes(port: u16, group_code: String) -> io::Result<()> {
 }
 
 pub async fn groups(port: u16) -> io::Result<()> {
-    let mut buf = [0; 4096];
+    let mut buf = vec![0; BUF_SIZE];
     let len = recv("groups", port, &mut buf).await?;
     match serde_json::from_slice::<Vec<GroupItem>>(&buf[..len]) {
         Ok(rs) => {
