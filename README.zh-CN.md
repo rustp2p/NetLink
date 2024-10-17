@@ -100,7 +100,7 @@ flowchart LR
 Node-A: ./netLink --group-code 123 --local 10.26.1.2/24
 Node-B: ./netLink --group-code 123 --local 10.26.1.3/24 --peer 8.210.54.141:23333
 Node-C: ./netLink --group-code 123 --local 10.26.1.4/24 --peer 8.210.54.141:23333
-Node-D: ./netLink --group-code 123 --local 10.26.1.4/24 --peer 192.168.1.2:23333
+Node-D: ./netLink --group-code 123 --local 10.26.1.5/24 --peer 192.168.1.2:23333
 ```
 
 所有已连接的节点可以互相访问
@@ -112,7 +112,7 @@ example：
 Node-A: ./netLink --group-code 123 --local 10.26.1.2/24
 Node-B: ./netLink --group-code 123 --local 10.26.1.3/24 --peer 8.210.54.141:23333
 Node-C: ./netLink --group-code 123 --local 10.26.1.4/24 --peer 8.210.54.141:23333
-Node-D: ./netLink --group-code 123 --local 10.26.1.4/24 --peer 192.168.1.2:23333 --peer 8.210.54.141:23333
+Node-D: ./netLink --group-code 123 --local 10.26.1.5/24 --peer 192.168.1.2:23333 --peer 8.210.54.141:23333
 ```
 
 ## 子网路由
@@ -172,7 +172,7 @@ Node-C <--> Node-A(192.168.10.2) <--> Node-B(192.168.10.3)
 
 ## 联系
 
-- TG: https://t.me/+hdMW5gWNNBphZDI1
+- 电报: https://t.me/+hdMW5gWNNBphZDI1
 - QQ群: 211072783
 
 ## 免费社区节点
