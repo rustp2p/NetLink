@@ -163,6 +163,7 @@ At this point, Node-C can directly access the IP address of Node-B(192.168.10.3)
 
 ## Contact
 
+- TG: https://t.me/+hdMW5gWNNBphZDI1
 - QQ group: 211072783
 
 ## Free community nodes
