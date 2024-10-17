@@ -1,3 +1,7 @@
+<p align="center">
+  <a href="./README.zh-CN.md">简体中文</a> |
+  <a href="./README.md">English</a>
+</p>
 NetLink is a decentralized networking tool built on the [rustp2p](https://crates.io/crates/rustp2p) library.
 
 ```
