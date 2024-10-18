@@ -87,12 +87,14 @@ pub async fn start(addr: String, api_service: ApiService) -> anyhow::Result<()> 
         .and(warp::get())
         .and(state_filter.clone())
         .and_then(nodes_by_group);
+    let static_files = warp::fs::dir("static");
     let routes = close_api
         .or(open_api)
         .or(current_info_api)
         .or(groups_api)
         .or(current_nodes_api)
         .or(nodes_by_group_api)
+        .or(static_files)
         .with(
             warp::cors()
                 .allow_any_origin()
