@@ -1,25 +1,38 @@
+use crate::config::Config;
+use crate::ipc::common::{GroupItem, NetworkNatInfo, RouteItem};
+use async_shutdown::ShutdownManager;
 use parking_lot::Mutex;
 use rustp2p::pipe::PipeWriter;
 use rustp2p::protocol::node_id::GroupCode;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
+use tokio::sync::mpsc::Sender;
 
-use crate::ipc::common::{GroupItem, NetworkNatInfo, RouteItem};
-
-#[derive(Clone, Default)]
+type PipeInfo = Arc<Mutex<Option<(PipeWriter, ShutdownManager<()>)>>>;
+#[derive(Clone)]
 pub struct ApiService {
-    pipe_writer: Arc<Mutex<Option<PipeWriter>>>,
+    config: Arc<Mutex<Config>>,
+    pipe: PipeInfo,
+    change_config_sender: Sender<Config>,
 }
 
 impl ApiService {
-    pub fn new(pipe_writer: PipeWriter) -> ApiService {
+    pub fn new(config: Config, change_config_sender: Sender<Config>) -> ApiService {
         Self {
-            pipe_writer: Arc::new(Mutex::new(Some(pipe_writer))),
+            pipe: Default::default(),
+            config: Arc::new(Mutex::new(config)),
+            change_config_sender,
         }
     }
-    pub fn set_pipe(&self, pipe_writer: PipeWriter) {
-        if let Some(v) = self.pipe_writer.lock().replace(pipe_writer) {
-            if let Err(e) = v.shutdown() {
+    pub fn load_config(&self) -> Config {
+        self.config.lock().clone()
+    }
+    pub fn set_pipe(&self, pipe_writer: PipeWriter, shutdown_manager: ShutdownManager<()>) {
+        if let Some((v1, v2)) = self.pipe.lock().replace((pipe_writer, shutdown_manager)) {
+            if let Err(e) = v1.shutdown() {
+                log::error!("shutdown failed {e:?}");
+            }
+            if let Err(e) = v2.trigger_shutdown(()) {
                 log::error!("shutdown failed {e:?}");
             }
         }
@@ -28,15 +41,33 @@ impl ApiService {
 
 impl ApiService {
     pub fn pipe_writer(&self) -> Option<PipeWriter> {
-        self.pipe_writer.lock().clone()
+        self.pipe.lock().as_ref().map(|(v1, _)| v1.clone())
     }
-    pub fn stop(&self)->anyhow::Result<()>{
-        let pipe_writer = if let Some(pipe_writer) =  self.pipe_writer.lock().take() {
-            pipe_writer
+    pub fn close(&self) -> anyhow::Result<()> {
+        let pipe = self.pipe.lock().take();
+        if let Some((pipe_writer, shutdown_manager)) = pipe {
+            let rs1 = shutdown_manager.trigger_shutdown(());
+            let rs2 = pipe_writer.shutdown();
+            rs1?;
+            rs2?;
         } else {
             Err(anyhow::anyhow!("Not Started"))?
+        }
+
+        Ok(())
+    }
+    pub async fn open(&self) -> anyhow::Result<()> {
+        if self.pipe.lock().is_some() {
+            Err(anyhow::anyhow!("Started"))?
+        }
+        if self
+            .change_config_sender
+            .send(self.load_config())
+            .await
+            .is_err()
+        {
+            Err(anyhow::anyhow!("Fail start"))?
         };
-        pipe_writer.shutdown()?;
         Ok(())
     }
     pub fn current_info(&self) -> anyhow::Result<NetworkNatInfo> {

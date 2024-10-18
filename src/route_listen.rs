@@ -1,17 +1,31 @@
+use async_shutdown::ShutdownManager;
 use futures::StreamExt;
 use net_route::{Handle, Route, RouteChange};
 use parking_lot::Mutex;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 
-pub async fn route_listen(if_index: u32, external_route: ExternalRoute) -> std::io::Result<()> {
+pub async fn route_listen(
+    shutdown_manager: ShutdownManager<()>,
+    if_index: u32,
+    external_route: ExternalRoute,
+) -> std::io::Result<()> {
     let handle = Handle::new()?;
     let stream = handle.route_listen_stream();
 
     tokio::spawn(async move {
         futures::pin_mut!(stream);
-
-        while let Some(value) = stream.next().await {
+        loop {
+            let value = if let Ok(rs) = shutdown_manager.wrap_cancel(stream.next()).await {
+                if let Some(rs) = rs {
+                    rs
+                } else {
+                    log::warn!("route_listen exit");
+                    return;
+                }
+            } else {
+                return;
+            };
             let (action, route) = match value {
                 RouteChange::Add(route) => ("add", route),
                 RouteChange::Delete(route) => ("delete", route),

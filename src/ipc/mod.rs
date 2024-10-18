@@ -1,6 +1,4 @@
 use crate::ipc::service::ApiService;
-use rustp2p::pipe::PipeWriter;
-
 pub mod common;
 
 #[cfg(feature = "web")]

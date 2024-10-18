@@ -4,6 +4,21 @@ use actix_web::web::Data;
 use actix_web::{web, App, HttpResponse, HttpServer};
 use std::{net, thread};
 
+#[actix_web::get("/api/close")]
+async fn close(service: Data<ApiService>) -> HttpResponse {
+    match service.close() {
+        Ok(_) => HttpResponse::Ok().json(ApiResponse::success("success")),
+        Err(e) => HttpResponse::Ok().json(ApiResponse::failed(format!("{e}"))),
+    }
+}
+#[actix_web::get("/api/open")]
+async fn open(service: Data<ApiService>) -> HttpResponse {
+    match service.open().await {
+        Ok(_) => HttpResponse::Ok().json(ApiResponse::success("success")),
+        Err(e) => HttpResponse::Ok().json(ApiResponse::failed(format!("{e}"))),
+    }
+}
+
 #[actix_web::get("/api/current-info")]
 async fn current_info(service: Data<ApiService>) -> HttpResponse {
     match service.current_info() {
@@ -60,6 +75,8 @@ async fn start0(listener: net::TcpListener, api_service: ApiService) -> anyhow::
             .service(groups)
             .service(current_nodes)
             .service(nodes_by_group)
+            .service(open)
+            .service(close)
     })
     .listen(listener)?
     .run()

@@ -1,25 +1,27 @@
 use clap::Parser;
 use env_logger::Env;
 
+use async_shutdown::ShutdownManager;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
 use std::sync::Arc;
 use tun_rs::{AbstractDevice, AsyncDevice};
 
+use crate::config::Config;
+use crate::ipc::service::ApiService;
 use crate::route_listen::ExternalRoute;
 use rustp2p::config::{LocalInterface, PipeConfig, TcpPipeConfig, UdpPipeConfig};
 use rustp2p::error::*;
 use rustp2p::pipe::{PeerNodeAddress, Pipe, PipeLine, PipeWriter, RecvError, RecvUserData};
 use rustp2p::protocol::node_id::{GroupCode, NodeID};
 use tokio::sync::mpsc::Sender;
-use crate::ipc::service::ApiService;
 
 mod cipher;
+mod config;
 mod exit_route;
 mod ipc;
 mod platform;
 mod route_listen;
-mod config;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -116,7 +118,7 @@ pub fn main() -> Result<()> {
             .enable_all()
             .build()
             .unwrap()
-            .block_on(run(args))
+            .block_on(main0(args))
     }
 }
 #[tokio::main(flavor = "current_thread")]
@@ -152,10 +154,10 @@ async fn client_cmd(args: ArgsBack) {
 }
 #[tokio::main(flavor = "current_thread")]
 async fn main_current_thread(args: Args) -> Result<()> {
-    run(args).await
+    main0(args).await
 }
 
-async fn run(args: Args) -> Result<()> {
+async fn main0(args: Args) -> Result<()> {
     let Args {
         peer,
         local,
@@ -183,16 +185,9 @@ async fn run(args: Args) -> Result<()> {
             addrs.push(addr.parse::<PeerNodeAddress>().expect("--peer"))
         }
     }
-    let (tx, mut quit) = tokio::sync::mpsc::channel::<()>(1);
-
-    ctrlc2::set_async_handler(async move {
-        let _ = tx.send(()).await;
-    })
-    .await;
 
     let port = port.unwrap_or(LISTEN_PORT);
-    let udp_config = UdpPipeConfig::default().set_simple_udp_port(port);
-    let tcp_config = TcpPipeConfig::default().set_tcp_port(port);
+
     let group_code = if let Some(group_code) = string_to_group_code(&group_code) {
         group_code
     } else {
@@ -239,33 +234,81 @@ async fn run(args: Args) -> Result<()> {
     } else {
         CMD_PORT
     };
+    let config = Config {
+        self_id,
+        prefix,
+        tun_name,
+        cipher,
+        port,
+        group_code,
+        addrs,
+        iface_option,
+        exit_node,
+    };
+    let (config_sender, mut config_receiver) = tokio::sync::mpsc::channel(1);
 
-    let api_service = ApiService::default();
+    let api_service = ApiService::new(config, config_sender);
     if let Err(e) = ipc::server_start(cmd_port, api_service.clone()).await {
         println!("The backend command port has already been used. Please use '--cmd-port' to change the port, err={e}");
         return Ok(());
     }
+    let (tx, mut quit) = tokio::sync::mpsc::channel::<()>(1);
 
-    let mut config = PipeConfig::empty()
+    ctrlc2::set_async_handler(async move {
+        let _ = tx.send(()).await;
+    })
+    .await;
+    let config = api_service.load_config();
+
+    start(api_service.clone(), config).await?;
+    let api_service_ = api_service.clone();
+    _ = tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                rs = config_receiver.recv()=>{
+                    if let Some(config) = rs{
+                          log::warn!("{:?}",config.port);
+                        if let Err(e) = start(api_service.clone(),config).await{
+                            log::warn!("{:?}",e);
+                        }
+                    }else{
+                        break;
+                    }
+                }
+                _ = quit.recv()=>{
+                    break;
+                }
+            }
+        }
+    })
+    .await;
+    _ = api_service_.close();
+    log::info!("exit!!!!");
+    Ok(())
+}
+async fn start(api_service: ApiService, config: Config) -> anyhow::Result<()> {
+    let udp_config = UdpPipeConfig::default().set_simple_udp_port(config.port);
+    let tcp_config = TcpPipeConfig::default().set_tcp_port(config.port);
+    let mut pipe_config = PipeConfig::empty()
         .set_udp_pipe_config(udp_config)
         .set_tcp_pipe_config(tcp_config)
-        .set_direct_addrs(addrs)
-        .set_group_code(group_code)
-        .set_node_id(self_id.into());
-    if let Some(iface) = iface_option {
-        config = config.set_default_interface(iface);
+        .set_direct_addrs(config.addrs)
+        .set_group_code(config.group_code)
+        .set_node_id(config.self_id.into());
+    if let Some(iface) = config.iface_option {
+        pipe_config = pipe_config.set_default_interface(iface);
     }
 
-    let mut pipe = Pipe::new(config).await?;
-    let writer = pipe.writer();
-    api_service.set_pipe(writer.clone());
+    let mut pipe = Pipe::new(pipe_config).await?;
+    let shutdown_manager = ShutdownManager::<()>::new();
 
-    let shutdown_writer = writer.clone();
+    api_service.set_pipe(pipe.writer().clone(), shutdown_manager.clone());
+
     let (sender, mut receiver) = tokio::sync::mpsc::channel::<RecvUserData>(256);
-    if prefix > 0 {
-        let mut config = tun_rs::Configuration::default();
-        config
-            .address_with_prefix(self_id, prefix)
+    if config.prefix > 0 {
+        let mut dev_config = tun_rs::Configuration::default();
+        dev_config
+            .address_with_prefix(config.self_id, config.prefix)
             .platform_config(|_v| {
                 #[cfg(windows)]
                 {
@@ -275,10 +318,10 @@ async fn run(args: Args) -> Result<()> {
             })
             .mtu(1400)
             .up();
-        if let Some(name) = tun_name {
-            config.name(name);
+        if let Some(name) = config.tun_name {
+            dev_config.name(name);
         }
-        let device = tun_rs::create_as_async(&config).unwrap();
+        let device = tun_rs::create_as_async(&dev_config)?;
         #[cfg(target_os = "linux")]
         if let Err(e) = device.set_tx_queue_len(1000) {
             log::warn!("set tx_queue_len failed. {e:?}");
@@ -289,16 +332,18 @@ async fn run(args: Args) -> Result<()> {
         let mut v6: [u8; 16] = [
             0xfd, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0, 0, 0, 0,
         ];
-        v6[12..].copy_from_slice(&self_id.octets());
+        v6[12..].copy_from_slice(&config.self_id.octets());
         let v6 = Ipv6Addr::from(v6);
         if let Err(e) = device.add_address_v6(v6.into(), 96) {
             log::warn!("add ipv6 failed. {e:?},v6={v6}");
         } else {
             log::info!("mapped ipv6 addr={v6}");
         }
-        let external_route = ExternalRoute::new(self_id, prefix);
-        route_listen::route_listen(if_index, external_route.clone()).await?;
-        if let Some(exit_node) = exit_node {
+        let external_route = ExternalRoute::new(config.self_id, config.prefix);
+
+        route_listen::route_listen(shutdown_manager.clone(), if_index, external_route.clone())
+            .await?;
+        if let Some(exit_node) = config.exit_node {
             exit_route::exit_route(exit_node, if_index).await?;
         }
         #[cfg(target_os = "macos")]
@@ -308,13 +353,23 @@ async fn run(args: Args) -> Result<()> {
         }
         let device = Arc::new(device);
         let device_r = device.clone();
-        let cipher_ = cipher.clone();
+        let cipher = config.cipher.clone();
+        let writer = pipe.writer();
         tokio::spawn(async move {
-            if let Err(e) = tun_recv(writer, device_r, self_id, external_route, cipher_).await {
+            if let Err(e) = tun_recv(
+                shutdown_manager,
+                writer,
+                device_r,
+                config.self_id,
+                external_route,
+                cipher,
+            )
+            .await
+            {
                 log::warn!("device.recv {e:?}")
             }
         });
-        let cipher = cipher.clone();
+        let cipher = config.cipher.clone();
         tokio::spawn(async move {
             while let Some(mut buf) = receiver.recv().await {
                 if let Some(cipher) = cipher.as_ref() {
@@ -335,7 +390,7 @@ async fn run(args: Args) -> Result<()> {
             }
         });
     }
-    log::info!("listen local port: {port}");
+    log::info!("listen local port: {}", config.port);
 
     tokio::spawn(async move {
         loop {
@@ -349,15 +404,9 @@ async fn run(args: Args) -> Result<()> {
                 }
             }
         }
+        drop(pipe)
     });
-
-    quit.recv().await.expect("quit error");
-    _ = shutdown_writer.shutdown();
-    log::info!("exit!!!!");
     Ok(())
-}
-fn start(){
-
 }
 
 fn string_to_group_code(input: &str) -> Option<GroupCode> {
@@ -386,6 +435,7 @@ async fn recv(mut line: PipeLine, sender: Sender<RecvUserData>) {
                 if let RecvError::Io(e) = e {
                     log::warn!("recv_from {e:?}");
                 }
+                drop(line);
                 return;
             }
         };
@@ -403,6 +453,7 @@ async fn recv(mut line: PipeLine, sender: Sender<RecvUserData>) {
 }
 
 async fn tun_recv(
+    shutdown_manager: ShutdownManager<()>,
     pipe_writer: PipeWriter,
     device: Arc<AsyncDevice>,
     self_ip: Ipv4Addr,
@@ -413,7 +464,14 @@ async fn tun_recv(
     loop {
         let mut send_packet = pipe_writer.allocate_send_packet();
         unsafe { send_packet.set_payload_len(send_packet.capacity()) };
-        let payload_len = device.recv(&mut send_packet).await?;
+        let payload_len = if let Ok(rs) = shutdown_manager
+            .wrap_cancel(device.recv(&mut send_packet))
+            .await
+        {
+            rs?
+        } else {
+            return Ok(());
+        };
         unsafe { send_packet.set_payload_len(payload_len) };
         let buf: &mut [u8] = &mut send_packet;
         if buf.len() < 20 {
