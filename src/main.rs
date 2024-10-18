@@ -111,10 +111,16 @@ pub fn main() -> Result<()> {
     };
     let worker_threads = args.threads.unwrap_or(2);
     if worker_threads <= 1 {
-        main_current_thread(args)
+        tokio::runtime::Builder::new_current_thread()
+            .thread_stack_size(4 * 1024 * 1024)
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(main0(args))
     } else {
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(worker_threads)
+            .thread_stack_size(4 * 1024 * 1024)
             .enable_all()
             .build()
             .unwrap()
@@ -151,10 +157,6 @@ async fn client_cmd(args: ArgsBack) {
     } else {
         println!("Use specific commands to view data");
     }
-}
-#[tokio::main(flavor = "current_thread")]
-async fn main_current_thread(args: Args) -> Result<()> {
-    main0(args).await
 }
 
 async fn main0(args: Args) -> Result<()> {
