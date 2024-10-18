@@ -83,36 +83,44 @@ pub async fn start(addr: String, api_service: ApiService) -> anyhow::Result<()> 
     let close_api = warp::path!("api" / "close")
         .and(warp::get())
         .and(state_filter.clone())
-        .and_then(close);
+        .and_then(close)
+        .boxed();
     let open_api = warp::path!("api" / "open")
         .and(warp::get())
         .and(state_filter.clone())
-        .and_then(open);
+        .and_then(open)
+        .boxed();
     let current_info_api = warp::path!("api" / "current-info")
         .and(warp::get())
         .and(state_filter.clone())
-        .and_then(current_info);
+        .and_then(current_info)
+        .boxed();
     let groups_api = warp::path!("api" / "groups")
         .and(warp::get())
         .and(state_filter.clone())
-        .and_then(groups);
+        .and_then(groups)
+        .boxed();
     let current_nodes_api = warp::path!("api" / "current-nodes")
         .and(warp::get())
         .and(state_filter.clone())
-        .and_then(current_nodes);
+        .and_then(current_nodes)
+        .boxed();
     let nodes_by_group_api = warp::path!("api" / "nodes-by-group" / String)
         .and(warp::get())
         .and(state_filter.clone())
-        .and_then(nodes_by_group);
+        .and_then(nodes_by_group)
+        .boxed();
     let current_config_api = warp::path!("api" / "current-config")
         .and(warp::get())
         .and(state_filter.clone())
-        .and_then(current_config);
+        .and_then(current_config)
+        .boxed();
     let update_config_api = warp::path!("api" / "update-config")
         .and(warp::post())
         .and(warp::body::json())
         .and(state_filter.clone())
-        .and_then(update_config);
+        .and_then(update_config)
+        .boxed();
     let static_files = warp::fs::dir("static");
     let routes = close_api
         .or(open_api)

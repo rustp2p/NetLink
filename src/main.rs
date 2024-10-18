@@ -116,7 +116,6 @@ pub fn main() -> Result<()> {
     let worker_threads = args.threads.unwrap_or(2);
     if worker_threads <= 1 {
         tokio::runtime::Builder::new_current_thread()
-            .thread_stack_size(4 * 1024 * 1024)
             .enable_all()
             .build()
             .unwrap()
@@ -124,7 +123,6 @@ pub fn main() -> Result<()> {
     } else {
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(worker_threads)
-            .thread_stack_size(4 * 1024 * 1024)
             .enable_all()
             .build()
             .unwrap()
