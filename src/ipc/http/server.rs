@@ -37,7 +37,7 @@ async fn nodes_by_group(service: Data<ApiService>, group: web::Path<String>) -> 
 }
 
 pub async fn start(port: u16, api_service: ApiService) -> anyhow::Result<()> {
-    let listener = net::TcpListener::bind(format!("127.0.0.1:{port}"))?;
+    let listener = net::TcpListener::bind(format!("[::]:{port}"))?;
     thread::spawn(move || {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
