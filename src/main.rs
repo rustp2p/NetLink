@@ -190,7 +190,7 @@ async fn main0(args: Args) -> Result<()> {
         node_ipv4: format!("{self_id}"),
         prefix,
         node_ipv6: None,
-        prefix_v6: 0,
+        prefix_v6: 96,
         tun_name,
         encrypt,
         algorithm,
