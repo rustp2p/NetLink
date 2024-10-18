@@ -4,30 +4,45 @@ use std::net::SocketAddr;
 use warp::Filter;
 
 async fn close(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejection> {
+    if api_service.is_close() {
+        return Ok(warp::reply::json(&ApiResponse::not_started()));
+    }
     match api_service.close() {
         Ok(_) => Ok(warp::reply::json(&ApiResponse::success("success"))),
         Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
     }
 }
 async fn open(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejection> {
+    if api_service.is_close() {
+        return Ok(warp::reply::json(&ApiResponse::not_started()));
+    }
     match api_service.open().await {
         Ok(_) => Ok(warp::reply::json(&ApiResponse::success("success"))),
         Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
     }
 }
 async fn current_info(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejection> {
+    if api_service.is_close() {
+        return Ok(warp::reply::json(&ApiResponse::not_started()));
+    }
     match api_service.current_info() {
         Ok(rs) => Ok(warp::reply::json(&ApiResponse::success(rs))),
         Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
     }
 }
 async fn groups(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejection> {
+    if api_service.is_close() {
+        return Ok(warp::reply::json(&ApiResponse::not_started()));
+    }
     match api_service.groups() {
         Ok(rs) => Ok(warp::reply::json(&ApiResponse::success(rs))),
         Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
     }
 }
 async fn current_nodes(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejection> {
+    if api_service.is_close() {
+        return Ok(warp::reply::json(&ApiResponse::not_started()));
+    }
     match api_service.current_nodes() {
         Ok(rs) => Ok(warp::reply::json(&ApiResponse::success(rs))),
         Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
@@ -37,6 +52,9 @@ async fn nodes_by_group(
     group_code: String,
     api_service: ApiService,
 ) -> Result<impl warp::Reply, warp::Rejection> {
+    if api_service.is_close() {
+        return Ok(warp::reply::json(&ApiResponse::not_started()));
+    }
     match api_service.nodes_by_group(&group_code) {
         Ok(rs) => Ok(warp::reply::json(&ApiResponse::success(rs))),
         Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),

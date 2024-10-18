@@ -40,6 +40,9 @@ impl ApiService {
     pub fn pipe_writer(&self) -> Option<PipeWriter> {
         self.pipe.lock().as_ref().map(|(v1, _)| v1.clone())
     }
+    pub fn is_close(&self) -> bool {
+        self.pipe.lock().is_none()
+    }
     pub fn close(&self) -> anyhow::Result<()> {
         let pipe = self.pipe.lock().take();
         if let Some((pipe_writer, shutdown_manager)) = pipe {
@@ -68,6 +71,11 @@ impl ApiService {
         };
         let punch_info = pipe_writer.pipe_context().punch_info().read().clone();
         let info = NetworkNatInfo {
+            node_ip: pipe_writer
+                .pipe_context()
+                .load_id()
+                .map(|v| v.into())
+                .unwrap_or(Ipv4Addr::UNSPECIFIED),
             local_ipv4: punch_info.local_ipv4,
             ipv6: punch_info.ipv6,
             nat_type: punch_info.nat_type,

@@ -19,6 +19,7 @@ pub async fn current_info(addr: String) -> io::Result<()> {
     let len = recv("info", addr, &mut buf).await?;
     match serde_json::from_slice::<NetworkNatInfo>(&buf[..len]) {
         Ok(mut rs) => {
+            println!("         node ip: {}", rs.node_ip);
             println!("      local ipv4: {}", rs.local_ipv4);
             println!("            ipv6: {:?}", rs.ipv6);
             println!("  local tcp port: {:?}", rs.local_tcp_port);

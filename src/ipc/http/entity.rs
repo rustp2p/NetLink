@@ -14,6 +14,16 @@ impl<T> ApiResponse<T> {
         Self { code: 400, data }
     }
 }
+impl ApiResponse<String> {
+    pub fn not_started() -> ApiResponse<String> {
+        Self {
+            code: 503,
+            data: "Not Started".to_string(),
+        }
+    }
+}
+impl warp::reject::Reject for ApiResponse<String> {}
+
 impl<T: Serialize> ApiResponse<T> {
     pub fn _to_json(&self) -> String {
         serde_json::to_string(&self).unwrap_or_else(|_e| {
