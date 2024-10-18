@@ -245,9 +245,8 @@ async fn main0(args: Args) -> Result<()> {
         iface_option,
         exit_node,
     };
-    let (config_sender, mut config_receiver) = tokio::sync::mpsc::channel(1);
 
-    let api_service = ApiService::new(config, config_sender);
+    let api_service = ApiService::new(config);
     if let Err(e) = ipc::server_start(cmd_port, api_service.clone()).await {
         println!("The backend command port has already been used. Please use '--cmd-port' to change the port, err={e}");
         return Ok(());
@@ -258,35 +257,15 @@ async fn main0(args: Args) -> Result<()> {
         let _ = tx.send(()).await;
     })
     .await;
-    let config = api_service.load_config();
 
-    start(api_service.clone(), config).await?;
-    let api_service_ = api_service.clone();
-    _ = tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                rs = config_receiver.recv()=>{
-                    if let Some(config) = rs{
-                          log::warn!("{:?}",config.port);
-                        if let Err(e) = start(api_service.clone(),config).await{
-                            log::warn!("{:?}",e);
-                        }
-                    }else{
-                        break;
-                    }
-                }
-                _ = quit.recv()=>{
-                    break;
-                }
-            }
-        }
-    })
-    .await;
-    _ = api_service_.close();
+    start(api_service.clone()).await?;
+    _ = quit.recv().await;
+    _ = api_service.close();
     log::info!("exit!!!!");
     Ok(())
 }
-async fn start(api_service: ApiService, config: Config) -> anyhow::Result<()> {
+async fn start(api_service: ApiService) -> anyhow::Result<()> {
+    let config = api_service.load_config();
     let udp_config = UdpPipeConfig::default().set_simple_udp_port(config.port);
     let tcp_config = TcpPipeConfig::default().set_tcp_port(config.port);
     let mut pipe_config = PipeConfig::empty()

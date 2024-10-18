@@ -6,22 +6,19 @@ use rustp2p::pipe::PipeWriter;
 use rustp2p::protocol::node_id::GroupCode;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
-use tokio::sync::mpsc::Sender;
 
 type PipeInfo = Arc<Mutex<Option<(PipeWriter, ShutdownManager<()>)>>>;
 #[derive(Clone)]
 pub struct ApiService {
     config: Arc<Mutex<Config>>,
     pipe: PipeInfo,
-    change_config_sender: Sender<Config>,
 }
 
 impl ApiService {
-    pub fn new(config: Config, change_config_sender: Sender<Config>) -> ApiService {
+    pub fn new(config: Config) -> ApiService {
         Self {
             pipe: Default::default(),
             config: Arc::new(Mutex::new(config)),
-            change_config_sender,
         }
     }
     pub fn load_config(&self) -> Config {
@@ -60,14 +57,7 @@ impl ApiService {
         if self.pipe.lock().is_some() {
             Err(anyhow::anyhow!("Started"))?
         }
-        if self
-            .change_config_sender
-            .send(self.load_config())
-            .await
-            .is_err()
-        {
-            Err(anyhow::anyhow!("Fail start"))?
-        };
+        crate::start(self.clone()).await?;
         Ok(())
     }
     pub fn current_info(&self) -> anyhow::Result<NetworkNatInfo> {

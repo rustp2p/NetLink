@@ -1,86 +1,88 @@
 use crate::ipc::http::entity::ApiResponse;
 use crate::ipc::service::ApiService;
-use actix_web::web::Data;
-use actix_web::{web, App, HttpResponse, HttpServer};
-use actix_cors::Cors;
-use std::{net, thread};
+use std::net::SocketAddr;
+use warp::Filter;
 
-#[actix_web::get("/api/close")]
-async fn close(service: Data<ApiService>) -> HttpResponse {
-    match service.close() {
-        Ok(_) => HttpResponse::Ok().json(ApiResponse::success("success")),
-        Err(e) => HttpResponse::Ok().json(ApiResponse::failed(format!("{e}"))),
+async fn close(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejection> {
+    match api_service.close() {
+        Ok(_) => Ok(warp::reply::json(&ApiResponse::success("success"))),
+        Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
     }
 }
-#[actix_web::get("/api/open")]
-async fn open(service: Data<ApiService>) -> HttpResponse {
-    match service.open().await {
-        Ok(_) => HttpResponse::Ok().json(ApiResponse::success("success")),
-        Err(e) => HttpResponse::Ok().json(ApiResponse::failed(format!("{e}"))),
+async fn open(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejection> {
+    match api_service.open().await {
+        Ok(_) => Ok(warp::reply::json(&ApiResponse::success("success"))),
+        Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
     }
 }
-
-#[actix_web::get("/api/current-info")]
-async fn current_info(service: Data<ApiService>) -> HttpResponse {
-    match service.current_info() {
-        Ok(rs) => HttpResponse::Ok().json(ApiResponse::success(rs)),
-        Err(e) => HttpResponse::Ok().json(ApiResponse::failed(format!("{e}"))),
+async fn current_info(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejection> {
+    match api_service.current_info() {
+        Ok(rs) => Ok(warp::reply::json(&ApiResponse::success(rs))),
+        Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
     }
 }
-
-#[actix_web::get("/api/groups")]
-async fn groups(service: Data<ApiService>) -> HttpResponse {
-    match service.groups() {
-        Ok(rs) => HttpResponse::Ok().json(ApiResponse::success(rs)),
-        Err(e) => HttpResponse::Ok().json(ApiResponse::failed(format!("{e}"))),
+async fn groups(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejection> {
+    match api_service.groups() {
+        Ok(rs) => Ok(warp::reply::json(&ApiResponse::success(rs))),
+        Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
     }
 }
-
-#[actix_web::get("/api/current-nodes")]
-async fn current_nodes(service: Data<ApiService>) -> HttpResponse {
-    match service.current_nodes() {
-        Ok(rs) => HttpResponse::Ok().json(ApiResponse::success(rs)),
-        Err(e) => HttpResponse::Ok().json(ApiResponse::failed(format!("{e}"))),
+async fn current_nodes(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejection> {
+    match api_service.current_nodes() {
+        Ok(rs) => Ok(warp::reply::json(&ApiResponse::success(rs))),
+        Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
     }
 }
-
-#[actix_web::get("/api/nodes-by-group/{group}")]
-async fn nodes_by_group(service: Data<ApiService>, group: web::Path<String>) -> HttpResponse {
-    match service.nodes_by_group(group.as_str()) {
-        Ok(rs) => HttpResponse::Ok().json(ApiResponse::success(rs)),
-        Err(e) => HttpResponse::Ok().json(ApiResponse::failed(format!("{e}"))),
+async fn nodes_by_group(
+    group_code: String,
+    api_service: ApiService,
+) -> Result<impl warp::Reply, warp::Rejection> {
+    match api_service.nodes_by_group(&group_code) {
+        Ok(rs) => Ok(warp::reply::json(&ApiResponse::success(rs))),
+        Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
     }
 }
 
 pub async fn start(port: u16, api_service: ApiService) -> anyhow::Result<()> {
-    let listener = net::TcpListener::bind(format!("[::]:{port}"))?;
-    thread::spawn(move || {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                if let Err(e) = start0(listener, api_service).await {
-                    log::warn!("web api {e:?}")
-                }
-            });
-    });
-    Ok(())
-}
-
-async fn start0(listener: net::TcpListener, api_service: ApiService) -> anyhow::Result<()> {
-    HttpServer::new(move || {
-        App::new().wrap(Cors::permissive())
-            .app_data(Data::new(api_service.clone()))
-            .service(current_info)
-            .service(groups)
-            .service(current_nodes)
-            .service(nodes_by_group)
-            .service(open)
-            .service(close)
-    })
-    .listen(listener)?
-    .run()
-    .await?;
+    let state_filter = warp::any().map(move || api_service.clone());
+    let close_api = warp::path!("api" / "close")
+        .and(warp::get())
+        .and(state_filter.clone())
+        .and_then(close);
+    let open_api = warp::path!("api" / "open")
+        .and(warp::get())
+        .and(state_filter.clone())
+        .and_then(open);
+    let current_info_api = warp::path!("api" / "current-info")
+        .and(warp::get())
+        .and(state_filter.clone())
+        .and_then(current_info);
+    let groups_api = warp::path!("api" / "groups")
+        .and(warp::get())
+        .and(state_filter.clone())
+        .and_then(groups);
+    let current_nodes_api = warp::path!("api" / "current-nodes")
+        .and(warp::get())
+        .and(state_filter.clone())
+        .and_then(current_nodes);
+    let nodes_by_group_api = warp::path!("api" / "nodes-by-group" / String)
+        .and(warp::get())
+        .and(state_filter.clone())
+        .and_then(nodes_by_group);
+    let routes = close_api
+        .or(open_api)
+        .or(current_info_api)
+        .or(groups_api)
+        .or(current_nodes_api)
+        .or(nodes_by_group_api)
+        .with(
+            warp::cors()
+                .allow_any_origin()
+                .allow_headers(vec!["content-type"])
+                .allow_methods(vec!["GET", "POST"]),
+        );
+    let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+    let (_addr, server) = warp::serve(routes).try_bind_ephemeral(addr)?;
+    tokio::spawn(server);
     Ok(())
 }
