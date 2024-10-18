@@ -2,6 +2,7 @@ use crate::ipc::http::entity::ApiResponse;
 use crate::ipc::service::ApiService;
 use actix_web::web::Data;
 use actix_web::{web, App, HttpResponse, HttpServer};
+use actix_cors::Cors;
 use std::{net, thread};
 
 #[actix_web::get("/api/current-info")]
@@ -54,7 +55,7 @@ pub async fn start(port: u16, api_service: ApiService) -> anyhow::Result<()> {
 
 async fn start0(listener: net::TcpListener, api_service: ApiService) -> anyhow::Result<()> {
     HttpServer::new(move || {
-        App::new()
+        App::new().wrap(Cors::permissive())
             .app_data(Data::new(api_service.clone()))
             .service(current_info)
             .service(groups)
