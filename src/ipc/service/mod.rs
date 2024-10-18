@@ -122,16 +122,10 @@ impl ApiService {
         let mut group_codes = Vec::new();
         let current_group_code = self.pipe_writer.current_group_code();
         let current_node_num = self.pipe_writer.nodes().len();
-        match String::from_utf8(current_group_code.as_ref().to_vec()) {
-            Ok(group_code) => group_codes.push(GroupItem {
-                group_code,
-                node_num: current_node_num,
-            }),
-            Err(_) => group_codes.push(GroupItem {
-                group_code: format!("{:?}", current_group_code.as_ref()),
-                node_num: current_node_num,
-            }),
-        }
+        group_codes.push(GroupItem {
+            group_code: group_code_to_string(&current_group_code),
+            node_num: current_node_num,
+        });
         let vec = self.pipe_writer.other_group_codes();
         for code in vec {
             let node_num = self
