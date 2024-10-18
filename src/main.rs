@@ -74,6 +74,9 @@ struct ArgsBack {
 enum Commands {
     /// Backend command
     Cmd {
+        /// set backend server host. default 127.0.0.1
+        #[arg(long)]
+        cmd_host: Option<String>,
         /// When opening multiple programs, this port needs to be set. default 23336
         #[arg(long)]
         cmd_port: Option<u16>,
@@ -91,6 +94,7 @@ enum Commands {
         others: Option<String>,
     },
 }
+const CMD_HOST: &str = "127.0.0.1";
 const CMD_PORT: u16 = 23336;
 const LISTEN_PORT: u16 = 23333;
 
@@ -130,28 +134,30 @@ pub fn main() -> Result<()> {
 #[tokio::main(flavor = "current_thread")]
 async fn client_cmd(args: ArgsBack) {
     let Commands::Cmd {
+        cmd_host,
         cmd_port,
         info,
         nodes,
         groups,
         others,
     } = args.command;
+    let host = cmd_host.unwrap_or(CMD_HOST.to_string());
+    let port = cmd_port.unwrap_or(CMD_PORT);
+    let addr = format!("{host}:{port}");
     if nodes {
-        if let Err(e) = ipc::udp::client::nodes(cmd_port.unwrap_or(CMD_PORT)).await {
+        if let Err(e) = ipc::udp::client::nodes(addr).await {
             println!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}");
         }
     } else if groups {
-        if let Err(e) = ipc::udp::client::groups(cmd_port.unwrap_or(CMD_PORT)).await {
+        if let Err(e) = ipc::udp::client::groups(addr).await {
             println!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}");
         }
     } else if let Some(group_code) = others {
-        if let Err(e) =
-            ipc::udp::client::other_nodes(cmd_port.unwrap_or(CMD_PORT), group_code).await
-        {
+        if let Err(e) = ipc::udp::client::other_nodes(addr, group_code).await {
             println!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}");
         }
     } else if info {
-        if let Err(e) = ipc::udp::client::current_info(cmd_port.unwrap_or(CMD_PORT)).await {
+        if let Err(e) = ipc::udp::client::current_info(addr).await {
             println!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}");
         }
     } else {
@@ -231,10 +237,17 @@ async fn main0(args: Args) -> Result<()> {
     } else {
         encrypt.map(cipher::Cipher::new_chacha20_poly1305)
     };
-    let cmd_port = if let Some(Commands::Cmd { cmd_port, .. }) = command {
-        cmd_port.unwrap_or(CMD_PORT)
+    let addr = if let Some(Commands::Cmd {
+        cmd_host, cmd_port, ..
+    }) = command
+    {
+        format!(
+            "{}:{}",
+            cmd_host.unwrap_or(CMD_HOST.to_string()),
+            cmd_port.unwrap_or(CMD_PORT)
+        )
     } else {
-        CMD_PORT
+        format!("{CMD_HOST}:{CMD_PORT}")
     };
     let config = Config {
         self_id,
@@ -249,7 +262,7 @@ async fn main0(args: Args) -> Result<()> {
     };
 
     let api_service = ApiService::new(config);
-    if let Err(e) = ipc::server_start(cmd_port, api_service.clone()).await {
+    if let Err(e) = ipc::server_start(addr, api_service.clone()).await {
         println!("The backend command port has already been used. Please use '--cmd-port' to change the port, err={e}");
         return Ok(());
     }

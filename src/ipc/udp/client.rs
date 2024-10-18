@@ -3,9 +3,9 @@ use std::io;
 use std::time::Duration;
 use tabled::Table;
 use tokio::net::UdpSocket;
-async fn recv(cmd: &str, port: u16, buf: &mut [u8]) -> io::Result<usize> {
-    let udp = UdpSocket::bind("127.0.0.1:0").await?;
-    udp.connect(format!("127.0.0.1:{port}")).await?;
+async fn recv(cmd: &str, addr: String, buf: &mut [u8]) -> io::Result<usize> {
+    let udp = UdpSocket::bind("[::]:0").await?;
+    udp.connect(addr).await?;
     udp.send(cmd.as_bytes()).await?;
     let len = match tokio::time::timeout(Duration::from_secs(2), udp.recv(buf)).await {
         Ok(rs) => rs?,
@@ -14,9 +14,9 @@ async fn recv(cmd: &str, port: u16, buf: &mut [u8]) -> io::Result<usize> {
     Ok(len)
 }
 const BUF_SIZE: usize = 1024 * 1024;
-pub async fn current_info(port: u16) -> io::Result<()> {
+pub async fn current_info(addr: String) -> io::Result<()> {
     let mut buf = vec![0; BUF_SIZE];
-    let len = recv("info", port, &mut buf).await?;
+    let len = recv("info", addr, &mut buf).await?;
     match serde_json::from_slice::<NetworkNatInfo>(&buf[..len]) {
         Ok(mut rs) => {
             println!("      local ipv4: {}", rs.local_ipv4);
@@ -53,9 +53,9 @@ pub async fn current_info(port: u16) -> io::Result<()> {
     Ok(())
 }
 
-pub async fn nodes(port: u16) -> io::Result<()> {
+pub async fn nodes(addr: String) -> io::Result<()> {
     let mut buf = vec![0; BUF_SIZE];
-    let len = recv("nodes", port, &mut buf).await?;
+    let len = recv("nodes", addr, &mut buf).await?;
     match serde_json::from_slice::<Vec<RouteItem>>(&buf[..len]) {
         Ok(rs) => {
             let table = Table::new(rs).to_string();
@@ -68,9 +68,9 @@ pub async fn nodes(port: u16) -> io::Result<()> {
     Ok(())
 }
 
-pub async fn other_nodes(port: u16, group_code: String) -> io::Result<()> {
+pub async fn other_nodes(addr: String, group_code: String) -> io::Result<()> {
     let mut buf = vec![0; BUF_SIZE];
-    let len = recv(&format!("other_nodes_{group_code}"), port, &mut buf).await?;
+    let len = recv(&format!("other_nodes_{group_code}"), addr, &mut buf).await?;
     match serde_json::from_slice::<Vec<RouteItem>>(&buf[..len]) {
         Ok(rs) => {
             let table = Table::new(rs).to_string();
@@ -83,9 +83,9 @@ pub async fn other_nodes(port: u16, group_code: String) -> io::Result<()> {
     Ok(())
 }
 
-pub async fn groups(port: u16) -> io::Result<()> {
+pub async fn groups(addr: String) -> io::Result<()> {
     let mut buf = vec![0; BUF_SIZE];
-    let len = recv("groups", port, &mut buf).await?;
+    let len = recv("groups", addr, &mut buf).await?;
     match serde_json::from_slice::<Vec<GroupItem>>(&buf[..len]) {
         Ok(rs) => {
             let table = Table::new(rs).to_string();

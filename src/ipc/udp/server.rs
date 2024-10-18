@@ -4,8 +4,7 @@ use tokio::net::UdpSocket;
 
 use crate::ipc::service::ApiService;
 
-pub async fn start(port: u16, api_service: ApiService) -> io::Result<()> {
-    let addr = format!("127.0.0.1:{port}");
+pub async fn start(addr: String, api_service: ApiService) -> io::Result<()> {
     let udp = UdpSocket::bind(&addr).await?;
     log::info!("start backend command server udp://{addr}");
     tokio::spawn(async move {

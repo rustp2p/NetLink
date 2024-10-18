@@ -43,7 +43,7 @@ async fn nodes_by_group(
     }
 }
 
-pub async fn start(port: u16, api_service: ApiService) -> anyhow::Result<()> {
+pub async fn start(addr: String, api_service: ApiService) -> anyhow::Result<()> {
     let state_filter = warp::any().map(move || api_service.clone());
     let close_api = warp::path!("api" / "close")
         .and(warp::get())
@@ -81,7 +81,8 @@ pub async fn start(port: u16, api_service: ApiService) -> anyhow::Result<()> {
                 .allow_headers(vec!["content-type"])
                 .allow_methods(vec!["GET", "POST"]),
         );
-    let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+    let addr: SocketAddr = addr.parse()?;
+    log::info!("start backend command server http://{addr}");
     let (_addr, server) = warp::serve(routes).try_bind_ephemeral(addr)?;
     tokio::spawn(server);
     Ok(())

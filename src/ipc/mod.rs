@@ -6,9 +6,9 @@ pub mod http;
 pub mod service;
 pub mod udp;
 
-pub async fn server_start(port: u16, api_service: ApiService) -> anyhow::Result<()> {
-    udp::server::start(port, api_service.clone()).await?;
+pub async fn server_start(addr: String, api_service: ApiService) -> anyhow::Result<()> {
+    udp::server::start(addr.clone(), api_service.clone()).await?;
     #[cfg(feature = "web")]
-    http::server::start(port, api_service).await?;
+    http::server::start(addr, api_service).await?;
     Ok(())
 }
