@@ -1,24 +1,51 @@
-use std::net::Ipv4Addr;
-
+use parking_lot::Mutex;
 use rustp2p::pipe::PipeWriter;
 use rustp2p::protocol::node_id::GroupCode;
+use std::net::Ipv4Addr;
+use std::sync::Arc;
 
 use crate::ipc::common::{GroupItem, NetworkNatInfo, RouteItem};
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ApiService {
-    pipe_writer: PipeWriter,
+    pipe_writer: Arc<Mutex<Option<PipeWriter>>>,
 }
 
 impl ApiService {
     pub fn new(pipe_writer: PipeWriter) -> ApiService {
-        Self { pipe_writer }
+        Self {
+            pipe_writer: Arc::new(Mutex::new(Some(pipe_writer))),
+        }
+    }
+    pub fn set_pipe(&self, pipe_writer: PipeWriter) {
+        if let Some(v) = self.pipe_writer.lock().replace(pipe_writer) {
+            if let Err(e) = v.shutdown() {
+                log::error!("shutdown failed {e:?}");
+            }
+        }
     }
 }
 
 impl ApiService {
+    pub fn pipe_writer(&self) -> Option<PipeWriter> {
+        self.pipe_writer.lock().clone()
+    }
+    pub fn stop(&self)->anyhow::Result<()>{
+        let pipe_writer = if let Some(pipe_writer) =  self.pipe_writer.lock().take() {
+            pipe_writer
+        } else {
+            Err(anyhow::anyhow!("Not Started"))?
+        };
+        pipe_writer.shutdown()?;
+        Ok(())
+    }
     pub fn current_info(&self) -> anyhow::Result<NetworkNatInfo> {
-        let punch_info = self.pipe_writer.pipe_context().punch_info().read().clone();
+        let pipe_writer = if let Some(pipe_writer) = self.pipe_writer() {
+            pipe_writer
+        } else {
+            Err(anyhow::anyhow!("Not Started"))?
+        };
+        let punch_info = pipe_writer.pipe_context().punch_info().read().clone();
         let info = NetworkNatInfo {
             local_ipv4: punch_info.local_ipv4,
             ipv6: punch_info.ipv6,
@@ -32,13 +59,18 @@ impl ApiService {
         Ok(info)
     }
     pub fn current_nodes(&self) -> anyhow::Result<Vec<RouteItem>> {
+        let pipe_writer = if let Some(pipe_writer) = self.pipe_writer() {
+            pipe_writer
+        } else {
+            Err(anyhow::anyhow!("Not Started"))?
+        };
         let mut list = Vec::new();
-        for node_id in self.pipe_writer.nodes() {
-            if let Some(routes) = self.pipe_writer.lookup_route(&node_id) {
+        for node_id in pipe_writer.nodes() {
+            if let Some(routes) = pipe_writer.lookup_route(&node_id) {
                 let not_empty = !routes.is_empty();
                 for route in routes {
                     let next_hop = if route.is_relay() {
-                        self.pipe_writer
+                        pipe_writer
                             .route_to_node_id(&route.route_key())
                             .map(|v| format!("{}", Ipv4Addr::from(v)))
                     } else {
@@ -68,8 +100,13 @@ impl ApiService {
         Ok(list)
     }
     pub fn nodes_by_group(&self, group_code: &str) -> anyhow::Result<Vec<RouteItem>> {
+        let pipe_writer = if let Some(pipe_writer) = self.pipe_writer() {
+            pipe_writer
+        } else {
+            Err(anyhow::anyhow!("Not Started"))?
+        };
         if let Some(group_code) = crate::string_to_group_code(group_code) {
-            let current_group_code = self.pipe_writer.current_group_code();
+            let current_group_code = pipe_writer.current_group_code();
             if group_code == current_group_code {
                 return self.current_nodes();
             }
@@ -78,18 +115,23 @@ impl ApiService {
         Err(anyhow::anyhow!("group_code error"))
     }
     pub fn other_nodes(&self, group_code: &GroupCode) -> anyhow::Result<Vec<RouteItem>> {
+        let pipe_writer = if let Some(pipe_writer) = self.pipe_writer() {
+            pipe_writer
+        } else {
+            Err(anyhow::anyhow!("Not Started"))?
+        };
         let mut list = Vec::new();
-        let nodes = if let Some(nodes) = self.pipe_writer.other_group_nodes(group_code) {
+        let nodes = if let Some(nodes) = pipe_writer.other_group_nodes(group_code) {
             nodes
         } else {
             return Ok(list);
         };
         for node_id in nodes {
-            if let Some(routes) = self.pipe_writer.other_group_route(group_code, &node_id) {
+            if let Some(routes) = pipe_writer.other_group_route(group_code, &node_id) {
                 let not_empty = !routes.is_empty();
                 for route in routes {
                     let next_hop = if route.is_relay() {
-                        self.pipe_writer
+                        pipe_writer
                             .other_route_to_node_id(group_code, &route.route_key())
                             .map(|v| format!("{}", Ipv4Addr::from(v)))
                     } else {
@@ -119,17 +161,21 @@ impl ApiService {
         Ok(list)
     }
     pub fn groups(&self) -> anyhow::Result<Vec<GroupItem>> {
+        let pipe_writer = if let Some(pipe_writer) = self.pipe_writer() {
+            pipe_writer
+        } else {
+            Err(anyhow::anyhow!("Not Started"))?
+        };
         let mut group_codes = Vec::new();
-        let current_group_code = self.pipe_writer.current_group_code();
-        let current_node_num = self.pipe_writer.nodes().len();
+        let current_group_code = pipe_writer.current_group_code();
+        let current_node_num = pipe_writer.nodes().len();
         group_codes.push(GroupItem {
             group_code: group_code_to_string(&current_group_code),
             node_num: current_node_num,
         });
-        let vec = self.pipe_writer.other_group_codes();
+        let vec = pipe_writer.other_group_codes();
         for code in vec {
-            let node_num = self
-                .pipe_writer
+            let node_num = pipe_writer
                 .other_group_nodes(&code)
                 .map(|v| v.len())
                 .unwrap_or_default();

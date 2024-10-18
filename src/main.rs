@@ -12,12 +12,14 @@ use rustp2p::error::*;
 use rustp2p::pipe::{PeerNodeAddress, Pipe, PipeLine, PipeWriter, RecvError, RecvUserData};
 use rustp2p::protocol::node_id::{GroupCode, NodeID};
 use tokio::sync::mpsc::Sender;
+use crate::ipc::service::ApiService;
 
 mod cipher;
 mod exit_route;
 mod ipc;
 mod platform;
 mod route_listen;
+mod config;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -184,7 +186,7 @@ async fn run(args: Args) -> Result<()> {
     let (tx, mut quit) = tokio::sync::mpsc::channel::<()>(1);
 
     ctrlc2::set_async_handler(async move {
-        tx.send(()).await.expect("Signal error");
+        let _ = tx.send(()).await;
     })
     .await;
 
@@ -197,12 +199,7 @@ async fn run(args: Args) -> Result<()> {
         println!("--group-code is too long");
         return Ok(());
     };
-    let mut config = PipeConfig::empty()
-        .set_udp_pipe_config(udp_config)
-        .set_tcp_pipe_config(tcp_config)
-        .set_direct_addrs(addrs)
-        .set_group_code(group_code)
-        .set_node_id(self_id.into());
+    let mut iface_option = None;
     if let Some(bind_dev_name) = bind_dev {
         let _bind_dev_index = match platform::dev_name_to_index(&bind_dev_name) {
             Ok(index) => index,
@@ -222,9 +219,8 @@ async fn run(args: Args) -> Result<()> {
             log::info!("bind_dev_name={bind_dev_name:?}");
             iface = LocalInterface::new(bind_dev_name.clone());
         }
-        config = config.set_default_interface(iface);
+        iface_option.replace(iface);
     }
-
     let cipher = if let Some(v) = algorithm {
         match v.to_lowercase().as_str() {
             "aes-gcm" => encrypt.map(cipher::Cipher::new_aes_gcm),
@@ -238,18 +234,32 @@ async fn run(args: Args) -> Result<()> {
     } else {
         encrypt.map(cipher::Cipher::new_chacha20_poly1305)
     };
-
-    let mut pipe = Pipe::new(config).await?;
-    let writer = pipe.writer();
     let cmd_port = if let Some(Commands::Cmd { cmd_port, .. }) = command {
         cmd_port.unwrap_or(CMD_PORT)
     } else {
         CMD_PORT
     };
-    if let Err(e) = ipc::server_start(cmd_port, writer.clone()).await {
+
+    let api_service = ApiService::default();
+    if let Err(e) = ipc::server_start(cmd_port, api_service.clone()).await {
         println!("The backend command port has already been used. Please use '--cmd-port' to change the port, err={e}");
         return Ok(());
     }
+
+    let mut config = PipeConfig::empty()
+        .set_udp_pipe_config(udp_config)
+        .set_tcp_pipe_config(tcp_config)
+        .set_direct_addrs(addrs)
+        .set_group_code(group_code)
+        .set_node_id(self_id.into());
+    if let Some(iface) = iface_option {
+        config = config.set_default_interface(iface);
+    }
+
+    let mut pipe = Pipe::new(config).await?;
+    let writer = pipe.writer();
+    api_service.set_pipe(writer.clone());
+
     let shutdown_writer = writer.clone();
     let (sender, mut receiver) = tokio::sync::mpsc::channel::<RecvUserData>(256);
     if prefix > 0 {
@@ -345,6 +355,9 @@ async fn run(args: Args) -> Result<()> {
     _ = shutdown_writer.shutdown();
     log::info!("exit!!!!");
     Ok(())
+}
+fn start(){
+
 }
 
 fn string_to_group_code(input: &str) -> Option<GroupCode> {

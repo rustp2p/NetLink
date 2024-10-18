@@ -8,8 +8,7 @@ pub mod http;
 pub mod service;
 pub mod udp;
 
-pub async fn server_start(port: u16, pipe_writer: PipeWriter) -> anyhow::Result<()> {
-    let api_service = ApiService::new(pipe_writer);
+pub async fn server_start(port: u16, api_service: ApiService) -> anyhow::Result<()> {
     udp::server::start(port, api_service.clone()).await?;
     #[cfg(feature = "web")]
     http::server::start(port, api_service).await?;
