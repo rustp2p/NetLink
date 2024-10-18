@@ -2,17 +2,17 @@ use clap::Parser;
 use env_logger::Env;
 
 use async_shutdown::ShutdownManager;
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::sync::Arc;
 use tun_rs::{AbstractDevice, AsyncDevice};
 
-use crate::config::Config;
+use crate::config::ConfigView;
 use crate::ipc::service::ApiService;
 use crate::route_listen::ExternalRoute;
-use rustp2p::config::{LocalInterface, PipeConfig, TcpPipeConfig, UdpPipeConfig};
+use rustp2p::config::{PipeConfig, TcpPipeConfig, UdpPipeConfig};
 use rustp2p::error::*;
-use rustp2p::pipe::{PeerNodeAddress, Pipe, PipeLine, PipeWriter, RecvError, RecvUserData};
+use rustp2p::pipe::{Pipe, PipeLine, PipeWriter, RecvError, RecvUserData};
 use rustp2p::protocol::node_id::{GroupCode, NodeID};
 use tokio::sync::mpsc::Sender;
 
@@ -56,7 +56,7 @@ struct Args {
     algorithm: Option<String>,
     /// Global exit node,please use it together with '--bind-dev'
     #[arg(long)]
-    exit_node: Option<Ipv4Addr>,
+    exit_node: Option<String>,
     /// Set tun name
     #[arg(long)]
     tun_name: Option<String>,
@@ -187,55 +187,19 @@ async fn main0(args: Args) -> Result<()> {
     } else {
         0
     };
-    let mut addrs = Vec::new();
-    if let Some(peers) = peer {
-        for addr in peers {
-            addrs.push(addr.parse::<PeerNodeAddress>().expect("--peer"))
-        }
-    }
-
-    let port = port.unwrap_or(LISTEN_PORT);
-
-    let group_code = if let Some(group_code) = string_to_group_code(&group_code) {
-        group_code
-    } else {
-        println!("--group-code is too long");
-        return Ok(());
-    };
-    let mut iface_option = None;
-    if let Some(bind_dev_name) = bind_dev {
-        let _bind_dev_index = match platform::dev_name_to_index(&bind_dev_name) {
-            Ok(index) => index,
-            Err(e) => {
-                log::error!("--bind-dev error: {e:?}");
-                return Ok(());
-            }
-        };
-        let iface;
-        #[cfg(not(target_os = "linux"))]
-        {
-            log::info!("bind_dev_name={bind_dev_name:?},bind_dev_index={_bind_dev_index}");
-            iface = LocalInterface::new(_bind_dev_index);
-        }
-        #[cfg(target_os = "linux")]
-        {
-            log::info!("bind_dev_name={bind_dev_name:?}");
-            iface = LocalInterface::new(bind_dev_name.clone());
-        }
-        iface_option.replace(iface);
-    }
-    let cipher = if let Some(v) = algorithm {
-        match v.to_lowercase().as_str() {
-            "aes-gcm" => encrypt.map(cipher::Cipher::new_aes_gcm),
-            "chacha20-poly1305" => encrypt.map(cipher::Cipher::new_chacha20_poly1305),
-            "xor" => encrypt.map(cipher::Cipher::new_xor),
-            _ => {
-                println!("--algorithm error");
-                return Ok(());
-            }
-        }
-    } else {
-        encrypt.map(cipher::Cipher::new_chacha20_poly1305)
+    let config_view = ConfigView {
+        group_code,
+        node_ipv4: format!("{self_id}"),
+        prefix,
+        node_ipv6: None,
+        prefix_v6: 0,
+        tun_name,
+        encrypt,
+        algorithm,
+        port: port.unwrap_or(LISTEN_PORT),
+        peer,
+        bind_dev_name: bind_dev,
+        exit_node,
     };
     let addr = if let Some(Commands::Cmd {
         cmd_host, cmd_port, ..
@@ -249,17 +213,7 @@ async fn main0(args: Args) -> Result<()> {
     } else {
         format!("{CMD_HOST}:{CMD_PORT}")
     };
-    let config = Config {
-        self_id,
-        prefix,
-        tun_name,
-        cipher,
-        port,
-        group_code,
-        addrs,
-        iface_option,
-        exit_node,
-    };
+    let config = config_view.into_config()?;
 
     let api_service = ApiService::new(config);
     if let Err(e) = ipc::server_start(addr, api_service.clone()).await {
@@ -286,9 +240,9 @@ async fn start(api_service: ApiService) -> anyhow::Result<()> {
     let mut pipe_config = PipeConfig::empty()
         .set_udp_pipe_config(udp_config)
         .set_tcp_pipe_config(tcp_config)
-        .set_direct_addrs(config.addrs)
+        .set_direct_addrs(config.peer_addrs.unwrap_or_default())
         .set_group_code(config.group_code)
-        .set_node_id(config.self_id.into());
+        .set_node_id(config.node_ipv4.into());
     if let Some(iface) = config.iface_option {
         pipe_config = pipe_config.set_default_interface(iface);
     }
@@ -302,7 +256,7 @@ async fn start(api_service: ApiService) -> anyhow::Result<()> {
     if config.prefix > 0 {
         let mut dev_config = tun_rs::Configuration::default();
         dev_config
-            .address_with_prefix(config.self_id, config.prefix)
+            .address_with_prefix(config.node_ipv4, config.prefix)
             .platform_config(|_v| {
                 #[cfg(windows)]
                 {
@@ -323,17 +277,15 @@ async fn start(api_service: ApiService) -> anyhow::Result<()> {
         let if_index = device.if_index().unwrap();
         let name = device.name().unwrap();
         log::info!("device index={if_index},name={name}",);
-        let mut v6: [u8; 16] = [
-            0xfd, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0, 0, 0, 0,
-        ];
-        v6[12..].copy_from_slice(&config.self_id.octets());
-        let v6 = Ipv6Addr::from(v6);
-        if let Err(e) = device.add_address_v6(v6.into(), 96) {
-            log::warn!("add ipv6 failed. {e:?},v6={v6}");
-        } else {
-            log::info!("mapped ipv6 addr={v6}");
+        if let Some(v6) = config.node_ipv6 {
+            if let Err(e) = device.add_address_v6(v6.into(), config.prefix_v6) {
+                log::warn!("add ipv6 failed. {e:?},v6={v6}");
+            } else {
+                log::info!("mapped ipv6 addr={v6}");
+            }
         }
-        let external_route = ExternalRoute::new(config.self_id, config.prefix);
+
+        let external_route = ExternalRoute::new(config.node_ipv4, config.prefix);
 
         route_listen::route_listen(shutdown_manager.clone(), if_index, external_route.clone())
             .await?;
@@ -354,7 +306,7 @@ async fn start(api_service: ApiService) -> anyhow::Result<()> {
                 shutdown_manager,
                 writer,
                 device_r,
-                config.self_id,
+                config.node_ipv4,
                 external_route,
                 cipher,
             )

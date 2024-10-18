@@ -1,3 +1,4 @@
+use crate::config::ConfigView;
 use crate::ipc::http::entity::ApiResponse;
 use crate::ipc::service::ApiService;
 use std::net::SocketAddr;
@@ -12,6 +13,15 @@ async fn close(api_service: ApiService) -> Result<impl warp::Reply, warp::Reject
         Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
     }
 }
+async fn update_config(
+    config_view: ConfigView,
+    api_service: ApiService,
+) -> Result<impl warp::Reply, warp::Rejection> {
+    match api_service.update_config(config_view) {
+        Ok(_) => Ok(warp::reply::json(&ApiResponse::success("success"))),
+        Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
+    }
+}
 async fn open(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejection> {
     if api_service.is_close() {
         return Ok(warp::reply::json(&ApiResponse::not_started()));
@@ -21,6 +31,13 @@ async fn open(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejecti
         Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
     }
 }
+async fn current_config(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejection> {
+    match api_service.current_config() {
+        Ok(rs) => Ok(warp::reply::json(&ApiResponse::success(rs))),
+        Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
+    }
+}
+
 async fn current_info(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejection> {
     if api_service.is_close() {
         return Ok(warp::reply::json(&ApiResponse::not_started()));
@@ -87,6 +104,15 @@ pub async fn start(addr: String, api_service: ApiService) -> anyhow::Result<()> 
         .and(warp::get())
         .and(state_filter.clone())
         .and_then(nodes_by_group);
+    let current_config_api = warp::path!("api" / "current-config")
+        .and(warp::get())
+        .and(state_filter.clone())
+        .and_then(current_config);
+    let update_config_api = warp::path!("api" / "update-config")
+        .and(warp::post())
+        .and(warp::body::json())
+        .and(state_filter.clone())
+        .and_then(update_config);
     let static_files = warp::fs::dir("static");
     let routes = close_api
         .or(open_api)
@@ -94,6 +120,8 @@ pub async fn start(addr: String, api_service: ApiService) -> anyhow::Result<()> 
         .or(groups_api)
         .or(current_nodes_api)
         .or(nodes_by_group_api)
+        .or(current_config_api)
+        .or(update_config_api)
         .or(static_files)
         .with(
             warp::cors()

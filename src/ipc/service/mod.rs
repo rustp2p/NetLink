@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::{Config, ConfigView};
 use crate::ipc::common::{GroupItem, NetworkNatInfo, RouteItem};
 use async_shutdown::ShutdownManager;
 use parking_lot::Mutex;
@@ -23,6 +23,9 @@ impl ApiService {
     }
     pub fn load_config(&self) -> Config {
         self.config.lock().clone()
+    }
+    pub fn save_config(&self, config: Config) {
+        *self.config.lock() = config;
     }
     pub fn set_pipe(&self, pipe_writer: PipeWriter, shutdown_manager: ShutdownManager<()>) {
         if let Some((v1, v2)) = self.pipe.lock().replace((pipe_writer, shutdown_manager)) {
@@ -61,6 +64,14 @@ impl ApiService {
             Err(anyhow::anyhow!("Started"))?
         }
         crate::start(self.clone()).await?;
+        Ok(())
+    }
+    pub fn current_config(&self) -> anyhow::Result<ConfigView> {
+        Ok(self.config.lock().to_config_view())
+    }
+    pub fn update_config(&self, config_view: ConfigView) -> anyhow::Result<()> {
+        let config = config_view.into_config()?;
+        self.save_config(config);
         Ok(())
     }
     pub fn current_info(&self) -> anyhow::Result<NetworkNatInfo> {
