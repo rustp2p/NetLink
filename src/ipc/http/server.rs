@@ -23,9 +23,6 @@ async fn update_config(
     }
 }
 async fn open(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejection> {
-    if api_service.is_close() {
-        return Ok(warp::reply::json(&ApiResponse::not_started()));
-    }
     match api_service.open().await {
         Ok(_) => Ok(warp::reply::json(&ApiResponse::success("success"))),
         Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
