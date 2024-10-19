@@ -1,17 +1,20 @@
 use clap::Parser;
 use env_logger::Env;
+use std::future::Future;
 
+use anyhow::anyhow;
 use async_shutdown::ShutdownManager;
+use clap::error::ErrorKind;
+use futures::FutureExt;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::sync::Arc;
 use tun_rs::{AbstractDevice, AsyncDevice};
 
-use crate::config::ConfigView;
+use crate::config::{ConfigView, FileConfigView};
 use crate::ipc::service::ApiService;
 use crate::route_listen::ExternalRoute;
 use rustp2p::config::{PipeConfig, TcpPipeConfig, UdpPipeConfig};
-use rustp2p::error::*;
 use rustp2p::pipe::{Pipe, PipeLine, PipeWriter, RecvError, RecvUserData};
 use rustp2p::protocol::node_id::{GroupCode, NodeID};
 use tokio::sync::mpsc::Sender;
@@ -60,9 +63,19 @@ struct Args {
     /// Set tun name
     #[arg(long)]
     tun_name: Option<String>,
+    /// Start using configuration file
+    #[arg(short = 'f', long)]
+    config: Option<String>,
     #[command(subcommand)]
     command: Option<Commands>,
 }
+
+#[derive(Parser, Debug)]
+struct ArgsConfig {
+    #[arg(short = 'f', long)]
+    config: String,
+}
+
 #[derive(Parser, Debug)]
 struct ArgsBack {
     #[arg(long)]
@@ -70,6 +83,7 @@ struct ArgsBack {
     #[command(subcommand)]
     command: Commands,
 }
+
 #[derive(clap::Subcommand, Debug)]
 enum Commands {
     /// Backend command
@@ -94,43 +108,68 @@ enum Commands {
         others: Option<String>,
     },
 }
+
 const CMD_HOST: &str = "127.0.0.1";
 const CMD_PORT: u16 = 23336;
 const LISTEN_PORT: u16 = 23333;
 
-pub fn main() -> Result<()> {
+pub fn main() -> anyhow::Result<()> {
     let args = match Args::try_parse() {
         Ok(arg) => arg,
         Err(e) => {
+            match e.kind() {
+                ErrorKind::DisplayHelp => {
+                    println!("{e}");
+                    return Ok(());
+                }
+                _ => {}
+            }
             match ArgsBack::try_parse() {
                 Ok(args) => {
-                    client_cmd(args);
+                    return client_cmd(args);
                 }
-                Err(_) => {
-                    println!("{e}");
-                }
+                Err(_) => {}
             }
+            match ArgsConfig::try_parse() {
+                Ok(args) => {
+                    let file_config = FileConfigView::read_file(&args.config)?;
+                    let worker_threads = file_config.threads;
+                    return block_on(worker_threads, async move {
+                        main_by_config_file(file_config).boxed().await
+                    });
+                }
+                Err(_) => {}
+            }
+            println!("{e}");
             return Ok(());
         }
     };
     let worker_threads = args.threads.unwrap_or(2);
+    block_on(
+        worker_threads,
+        async move { main_by_cmd(args).boxed().await },
+    )
+}
+
+fn block_on<F: Future>(worker_threads: usize, f: F) -> F::Output {
     if worker_threads <= 1 {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap()
-            .block_on(main0(args))
+            .block_on(f)
     } else {
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(worker_threads)
             .enable_all()
             .build()
             .unwrap()
-            .block_on(main0(args))
+            .block_on(f)
     }
 }
+
 #[tokio::main(flavor = "current_thread")]
-async fn client_cmd(args: ArgsBack) {
+async fn client_cmd(args: ArgsBack) -> anyhow::Result<()> {
     let Commands::Cmd {
         cmd_host,
         cmd_port,
@@ -144,26 +183,27 @@ async fn client_cmd(args: ArgsBack) {
     let addr = format!("{host}:{port}");
     if nodes {
         if let Err(e) = ipc::udp::client::nodes(addr).await {
-            println!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}");
+            Err(anyhow!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}"))?;
         }
     } else if groups {
         if let Err(e) = ipc::udp::client::groups(addr).await {
-            println!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}");
+            Err(anyhow!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}"))?;
         }
     } else if let Some(group_code) = others {
         if let Err(e) = ipc::udp::client::other_nodes(addr, group_code).await {
-            println!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}");
+            Err(anyhow!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}"))?;
         }
     } else if info {
         if let Err(e) = ipc::udp::client::current_info(addr).await {
-            println!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}");
+            Err(anyhow!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}"))?;
         }
     } else {
-        println!("Use specific commands to view data");
+        Err(anyhow!("Use specific commands to view data"))?;
     }
+    Ok(())
 }
 
-async fn main0(args: Args) -> Result<()> {
+async fn main_by_cmd(args: Args) -> anyhow::Result<()> {
     let Args {
         peer,
         local,
@@ -190,7 +230,6 @@ async fn main0(args: Args) -> Result<()> {
         node_ipv4: format!("{self_id}"),
         prefix,
         node_ipv6: None,
-        prefix_v6: 96,
         tun_name,
         encrypt,
         algorithm,
@@ -198,6 +237,7 @@ async fn main0(args: Args) -> Result<()> {
         peer,
         bind_dev_name: bind_dev,
         exit_node,
+        ..ConfigView::default()
     };
     let addr = if let Some(Commands::Cmd {
         cmd_host, cmd_port, ..
@@ -211,12 +251,22 @@ async fn main0(args: Args) -> Result<()> {
     } else {
         format!("{CMD_HOST}:{CMD_PORT}")
     };
+    start_by_config(config_view, addr).await?;
+    Ok(())
+}
+
+async fn main_by_config_file(file_config: FileConfigView) -> anyhow::Result<()> {
+    let addr = format!("{}:{}", file_config.cmd_host, file_config.cmd_port);
+    let config_view = ConfigView::from(file_config);
+    start_by_config(config_view, addr).await
+}
+
+async fn start_by_config(config_view: ConfigView, cmd_server_addr: String) -> anyhow::Result<()> {
     let config = config_view.into_config()?;
 
     let api_service = ApiService::new(config);
-    if let Err(e) = ipc::server_start(addr, api_service.clone()).await {
-        println!("The backend command port has already been used. Please use '--cmd-port' to change the port, err={e}");
-        return Ok(());
+    if let Err(e) = ipc::server_start(cmd_server_addr, api_service.clone()).await {
+        return Err(anyhow!("The backend command port has already been used. Please use '--cmd-port' to change the port, err={e}"));
     }
     let (tx, mut quit) = tokio::sync::mpsc::channel::<()>(1);
 
@@ -231,8 +281,10 @@ async fn main0(args: Args) -> Result<()> {
     log::info!("exit!!!!");
     Ok(())
 }
+
 async fn start(api_service: ApiService) -> anyhow::Result<()> {
     let config = api_service.load_config();
+
     let udp_config = UdpPipeConfig::default().set_simple_udp_port(config.port);
     let tcp_config = TcpPipeConfig::default().set_tcp_port(config.port);
     let mut pipe_config = PipeConfig::empty()
@@ -240,7 +292,9 @@ async fn start(api_service: ApiService) -> anyhow::Result<()> {
         .set_tcp_pipe_config(tcp_config)
         .set_direct_addrs(config.peer_addrs.unwrap_or_default())
         .set_group_code(config.group_code)
-        .set_node_id(config.node_ipv4.into());
+        .set_node_id(config.node_ipv4.into())
+        .set_udp_stun_servers(config.udp_stun)
+        .set_tcp_stun_servers(config.tcp_stun);
     if let Some(iface) = config.iface_option {
         pipe_config = pipe_config.set_default_interface(iface);
     }
@@ -403,7 +457,7 @@ async fn tun_recv(
     self_ip: Ipv4Addr,
     external_route: ExternalRoute,
     cipher: Option<cipher::Cipher>,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     let self_id: NodeID = self_ip.into();
     loop {
         let mut send_packet = pipe_writer.allocate_send_packet();

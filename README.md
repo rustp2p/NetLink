@@ -23,7 +23,63 @@ Options:
   -a, --algorithm <ALGORITHM>    Set encryption algorithm. Optional aes-gcm/chacha20-poly1305/xor, default is chacha20-poly1305
       --exit-node <EXIT_NODE>    Global exit node,please use it together with '--bind-dev'
       --tun-name <TUN_NAME>      Set tun name
+  -f, --config <CONFIG>          Start using configuration file
  ```
+## Start with config file
+<details> <summary>open</summary>
+
+```yaml
+## ./netLink --config <config_file_path>
+## On demand use, unnecessary configurations can be deleted
+
+## Command server host. default is "127.0.0.1"
+#cmd_host: "127.0.0.1"
+## Command server port. default is 23336
+#cmd_port: 23336
+## Number of program task threads. default is 2
+#threads: 2
+## group code. cannot be empty
+group_code: String
+## node tun ipv4. cannot be empty
+node_ipv4: "10.26.1.2"
+## node tun network prefix. default is 24
+#prefix: 24
+## node tun ipv6. The program will automatically generate node_ipv6
+# node_ipv6: 
+# prefix_v6: 96
+
+## tun device name. The program will automatically generate tun_name
+#tun_name: "tun3"
+## Enable data encryption
+#encrypt: "password"
+## Set encryption algorithm. Optional aes-gcm/chacha20-poly1305/xor. default is chacha20-poly1305
+#algorithm: "chacha20-poly1305"
+##   Listen local port. default is 23333
+# port: 23333
+## Peer node address
+#peer:
+#   - udp://192.168.10.23:23333
+#   - tcp://192.168.10.23:23333
+## Bind the outgoing network interface (using the interface name)
+#bind_dev_name: "eth0"
+## Global exit node,please use it together with "bind_dev_name"
+#exit_node: 
+
+## stun server addr
+#udp_stun:
+#   - stun1.l.google.com:19302
+#   - stun2.l.google.com:19302
+#tcp_stun:
+#   - stun.flashdance.cx
+#   - stun.nextcloud.com:443
+
+```
+
+</details>
+
+## Web UI
+
+[netlink-app](https://github.com/xmh0511/netlink-app)
 
 ## Features
 

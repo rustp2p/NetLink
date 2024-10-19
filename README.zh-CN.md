@@ -25,7 +25,64 @@ Options:
   -a, --algorithm <ALGORITHM>    设定加密算法. 可选择算法: aes-gcm/chacha20-poly1305/xor, 默认是：chacha20-poly1305
       --exit-node <EXIT_NODE>    网关节点，请配合'--bind-dev'使用
       --tun-name <TUN_NAME>      设定本地tun的名称
+  -f, --config <CONFIG>          使用配置文件启动
+
  ```
+## 使用配置文件启动
+<details> <summary>展开</summary>
+
+```yaml
+## ./netLink --config <config_file_path>
+## 按需修改
+
+## 后台命令服务监听地址. 默认值 "127.0.0.1"
+#cmd_host: "127.0.0.1"
+## 后台命令服务监听端口. 默认值 23336
+#cmd_port: 23336
+## 工作线程数. 默认值 2
+#threads: 2
+## 组编号，必填
+group_code: String
+## 虚拟ipv4 必填
+node_ipv4: "10.26.1.2"
+## 网段，默认值24，填0则不监听tun网络
+#prefix: 24
+## 虚拟ipv6,会自动生成
+# node_ipv6: 
+# prefix_v6: 96
+
+## tun网卡名称，会自己生成
+#tun_name: "tun3"
+## 开启加密，设置加密密码
+#encrypt: "password"
+## 加密算法. 可选 aes-gcm/chacha20-poly1305/xor. 默认值 chacha20-poly1305
+#algorithm: "chacha20-poly1305"
+##监听端口. 默认值 23333
+# port: 23333
+## 对端地址
+#peer:
+#   - udp://192.168.10.23:23333
+#   - tcp://192.168.10.23:23333
+## 使用网卡名称绑定出口网卡
+#bind_dev_name: "eth0"
+## 全局出口，配合 "bind_dev_name"一起使用
+#exit_node: 
+
+## tun服务 区分udp和tcp服务
+#udp_stun:
+#   - stun1.l.google.com:19302
+#   - stun2.l.google.com:19302
+#tcp_stun:
+#   - stun.flashdance.cx
+#   - stun.nextcloud.com:443
+
+```
+
+</details>
+
+## Web UI
+
+[netlink-app](https://github.com/xmh0511/netlink-app)
 
 ## 特性
 

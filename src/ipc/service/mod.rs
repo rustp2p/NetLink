@@ -1,4 +1,4 @@
-use crate::config::{Config, ConfigView};
+use crate::config::{group_code_to_string, Config, ConfigView};
 use crate::ipc::common::{GroupItem, NetworkNatInfo, RouteItem};
 use async_shutdown::ShutdownManager;
 use parking_lot::Mutex;
@@ -226,16 +226,5 @@ impl ApiService {
             });
         }
         Ok(group_codes)
-    }
-}
-
-fn group_code_to_string(group_code: &GroupCode) -> String {
-    let mut vec = group_code.as_ref().to_vec();
-    if let Some(pos) = vec.iter().rposition(|&x| x != 0) {
-        vec.truncate(pos + 1);
-    }
-    match String::from_utf8(vec) {
-        Ok(group_code) => group_code,
-        Err(_) => format!("{:?}", group_code.as_ref()),
     }
 }

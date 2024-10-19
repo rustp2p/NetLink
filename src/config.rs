@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 use rustp2p::config::LocalInterface;
@@ -6,6 +7,21 @@ use rustp2p::protocol::node_id::GroupCode;
 use serde::{Deserialize, Serialize};
 
 use crate::cipher::Cipher;
+use crate::{CMD_HOST, CMD_PORT, LISTEN_PORT};
+
+const UDP_STUN: [&str; 6] = [
+    "stun.miwifi.com",
+    "stun.chat.bilibili.com",
+    "stun.hitv.com",
+    "stun.l.google.com:19302",
+    "stun1.l.google.com:19302",
+    "stun2.l.google.com:19302",
+];
+const TCP_STUN: [&str; 3] = [
+    "stun.flashdance.cx",
+    "stun.sipnet.net",
+    "stun.nextcloud.com:443",
+];
 
 #[derive(Clone)]
 pub struct Config {
@@ -15,12 +31,17 @@ pub struct Config {
     pub prefix_v6: u8,
     pub tun_name: Option<String>,
     pub cipher: Option<Cipher>,
+    pub encrypt: Option<String>,
+    pub algorithm: Option<String>,
     pub port: u16,
     pub group_code: GroupCode,
     pub peer_addrs: Option<Vec<PeerNodeAddress>>,
     pub bind_dev_name: Option<String>,
     pub iface_option: Option<LocalInterface>,
     pub exit_node: Option<Ipv4Addr>,
+
+    pub udp_stun: Vec<String>,
+    pub tcp_stun: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -37,6 +58,117 @@ pub struct ConfigView {
     pub peer: Option<Vec<String>>,
     pub bind_dev_name: Option<String>,
     pub exit_node: Option<String>,
+
+    pub udp_stun: Vec<String>,
+    pub tcp_stun: Vec<String>,
+}
+
+impl Default for ConfigView {
+    fn default() -> Self {
+        Self {
+            group_code: "".to_string(),
+            node_ipv4: "".to_string(),
+            prefix: 24,
+            node_ipv6: None,
+            prefix_v6: 96,
+            tun_name: None,
+            encrypt: None,
+            algorithm: None,
+            port: LISTEN_PORT,
+            peer: None,
+            bind_dev_name: None,
+            exit_node: None,
+            udp_stun: UDP_STUN.iter().map(|v| v.to_string()).collect(),
+            tcp_stun: TCP_STUN.iter().map(|v| v.to_string()).collect(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
+pub struct FileConfigView {
+    pub cmd_host: String,
+    pub cmd_port: u16,
+    pub threads: usize,
+
+    pub group_code: String,
+    pub node_ipv4: String,
+    pub prefix: u8,
+    pub node_ipv6: Option<String>,
+    pub prefix_v6: u8,
+    pub tun_name: Option<String>,
+    pub encrypt: Option<String>,
+    pub algorithm: Option<String>,
+    pub port: u16,
+    pub peer: Option<Vec<String>>,
+    pub bind_dev_name: Option<String>,
+    pub exit_node: Option<String>,
+
+    pub udp_stun: Vec<String>,
+    pub tcp_stun: Vec<String>,
+}
+
+impl FileConfigView {
+    pub fn read_file(file_path: &str) -> anyhow::Result<Self> {
+        let conf = std::fs::read_to_string(file_path)?;
+        let file_conf = serde_yaml::from_str::<FileConfigView>(&conf)?;
+        file_conf.check()?;
+        Ok(file_conf)
+    }
+    pub fn check(&self) -> anyhow::Result<()> {
+        if self.group_code.trim().is_empty() {
+            Err(anyhow!("group_code cannot be empty"))?
+        }
+        if self.node_ipv4.trim().is_empty() {
+            Err(anyhow!("node_ipv4 cannot be empty"))?
+        }
+        Ok(())
+    }
+}
+
+impl From<FileConfigView> for ConfigView {
+    fn from(value: FileConfigView) -> Self {
+        Self {
+            group_code: value.group_code,
+            node_ipv4: value.node_ipv4,
+            prefix: value.prefix,
+            node_ipv6: value.node_ipv6,
+            prefix_v6: value.prefix_v6,
+            tun_name: value.tun_name,
+            encrypt: value.encrypt,
+            algorithm: value.algorithm,
+            port: value.port,
+            peer: value.peer,
+            bind_dev_name: value.bind_dev_name,
+            exit_node: value.exit_node,
+            udp_stun: value.udp_stun,
+            tcp_stun: value.tcp_stun,
+        }
+    }
+}
+
+impl Default for FileConfigView {
+    fn default() -> Self {
+        Self {
+            cmd_host: CMD_HOST.to_string(),
+            cmd_port: CMD_PORT,
+            threads: 2,
+            group_code: "".to_string(),
+            node_ipv4: "".to_string(),
+            prefix: 24,
+            node_ipv6: None,
+            prefix_v6: 96,
+            tun_name: None,
+            encrypt: None,
+            algorithm: Some("chacha20-poly1305".to_string()),
+            port: LISTEN_PORT,
+            peer: None,
+            bind_dev_name: None,
+            exit_node: None,
+            udp_stun: UDP_STUN.iter().map(|v| v.to_string()).collect(),
+            tcp_stun: TCP_STUN.iter().map(|v| v.to_string()).collect(),
+        }
+    }
 }
 
 impl Config {
@@ -48,8 +180,8 @@ impl Config {
             node_ipv6: self.node_ipv6.map(|v| format!("{v}")),
             prefix_v6: self.prefix_v6,
             tun_name: self.tun_name.clone(),
-            encrypt: self.cipher.as_ref().map(|_| "***".to_string()),
-            algorithm: self.cipher.as_ref().map(|_| "***".to_string()),
+            encrypt: self.encrypt.clone(),
+            algorithm: self.algorithm.clone(),
             port: self.port,
             peer: self
                 .peer_addrs
@@ -57,9 +189,12 @@ impl Config {
                 .map(|v| v.iter().map(|v| v.to_string()).collect()),
             bind_dev_name: self.bind_dev_name.clone(),
             exit_node: self.exit_node.map(|v| format!("{v}")),
+            udp_stun: self.udp_stun.clone(),
+            tcp_stun: self.tcp_stun.clone(),
         }
     }
 }
+
 impl ConfigView {
     pub fn into_config(self) -> anyhow::Result<Config> {
         let group_code = string_to_group_code(&self.group_code)?;
@@ -71,12 +206,10 @@ impl ConfigView {
             let node_ipv6: Ipv6Addr = node_ipv6
                 .parse()
                 .map_err(|e| anyhow::anyhow!("node_ipv6 error: {e}"))?;
-            let last: [u8; 4] = node_ipv6.octets()[12..].try_into().unwrap();
-            if last != node_ipv4.octets() {
-                Err(anyhow::anyhow!(
-                    "The last four bytes of IPv6 need to be the same as IPv4"
-                ))?
-            }
+            let mut octets = node_ipv6.octets();
+            octets[12..].copy_from_slice(&node_ipv4.octets());
+
+            let node_ipv6 = Ipv6Addr::from(octets);
             if self.prefix_v6 > 96 {
                 Err(anyhow::anyhow!("prefix_v6 cannot be greater than 96"))?
             }
@@ -90,6 +223,8 @@ impl ConfigView {
 
             Some(v6)
         };
+        let encrypt = self.encrypt.clone();
+        let algorithm = self.algorithm.clone();
         let cipher = if let Some(v) = self.algorithm {
             match v.to_lowercase().as_str() {
                 "aes-gcm" => self.encrypt.map(Cipher::new_aes_gcm),
@@ -144,17 +279,21 @@ impl ConfigView {
             prefix_v6: self.prefix_v6,
             tun_name: self.tun_name,
             cipher,
+            encrypt,
+            algorithm,
             port: self.port,
             group_code,
             peer_addrs,
             bind_dev_name: self.bind_dev_name,
             iface_option,
             exit_node,
+            udp_stun: self.udp_stun,
+            tcp_stun: self.tcp_stun,
         })
     }
 }
 
-fn string_to_group_code(input: &str) -> anyhow::Result<GroupCode> {
+pub(crate) fn string_to_group_code(input: &str) -> anyhow::Result<GroupCode> {
     let mut array = [0u8; 16];
     let bytes = input.as_bytes();
     if bytes.len() > 16 {
@@ -164,7 +303,8 @@ fn string_to_group_code(input: &str) -> anyhow::Result<GroupCode> {
     array[..len].copy_from_slice(&bytes[..len]);
     Ok(array.into())
 }
-fn group_code_to_string(group_code: &GroupCode) -> String {
+
+pub(crate) fn group_code_to_string(group_code: &GroupCode) -> String {
     let mut vec = group_code.as_ref().to_vec();
     if let Some(pos) = vec.iter().rposition(|&x| x != 0) {
         vec.truncate(pos + 1);
