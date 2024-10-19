@@ -519,7 +519,7 @@ async fn tun_recv(
 }
 
 #[cfg(target_os = "macos")]
-async fn process_myself(payload: &[u8], device: &Arc<AsyncDevice>) -> Result<()> {
+async fn process_myself(payload: &[u8], device: &Arc<AsyncDevice>) -> anyhow::Result<()> {
     use pnet_packet::icmp::IcmpTypes;
     use pnet_packet::ip::IpNextHeaderProtocols;
     use pnet_packet::Packet;
