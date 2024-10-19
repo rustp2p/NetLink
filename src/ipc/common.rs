@@ -11,6 +11,7 @@ pub struct RouteItem {
     pub protocol: String,
     pub metric: u8,
     pub rtt: u32,
+    pub interface: String,
 }
 #[derive(Serialize, Deserialize, Debug, Tabled)]
 pub struct GroupItem {

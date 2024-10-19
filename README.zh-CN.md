@@ -1,4 +1,3 @@
-
 <p align="center">
   <a href="./README.zh-CN.md">简体中文</a> |
   <a href="./README.md">English</a>
@@ -7,6 +6,7 @@
 `NetLink` 是建立在[rustp2p](https://crates.io/crates/rustp2p)库基础上的去中心化的网络工具.
 
 ## 使用
+
 ```
 管理员权限命令行输入: netLink.exe [OPTIONS] --local <LOCAL IP> --group-code <GROUP CODE>
 
@@ -28,7 +28,9 @@ Options:
   -f, --config <CONFIG>          使用配置文件启动
 
  ```
+
 ## 使用配置文件启动
+
 <details> <summary>展开</summary>
 
 ```yaml
@@ -83,6 +85,19 @@ node_ipv4: "10.26.1.2"
 ## Web UI
 
 [netlink-app](https://github.com/xmh0511/netlink-app)
+
+### 使用方法：
+
+#### 一. 使用浏览器启动：
+
+1. 将netlink-app项目生成的dist下的文件放到netlink程序路径下的‘static’目录中
+2. 启动netlink
+3. 在浏览器使用'http://127.0.0.1:23336'访问
+
+#### 二. tauri可执行文件启动：
+
+1. 启动netlink
+2. 打开netlink-app
 
 ## 特性
 
@@ -192,35 +207,48 @@ Node-C <--> Node-A(192.168.10.2) <--> Node-B(192.168.10.3)
 ```
 
 1. **第一步 : 节点Node-A配置转发网卡**
-  > 转发所有来源地址在网段10.26.1.0/24下的流量到指定网卡
 
-   **Linux**
+> 转发所有来源地址在网段10.26.1.0/24下的流量到指定网卡
+
+**Linux**
+
    ```
    sudo sysctl -w net.ipv4.ip_forward=1
    sudo iptables -t nat -A POSTROUTING  -o eth0 -s 10.26.1.0/24 -j MASQUERADE
    ```
-   **Windows**
+
+**Windows**
+
    ```
    New-NetNat -Name testSubnet -InternalIPInterfaceAddressPrefix 10.26.1.0/24
    ```
-   **Macos**
+
+**Macos**
+
    ```
    sudo sysctl -w net.ipv4.ip_forward=1
    echo "nat on en0 from 10.26.1.0/24 to any -> (en0)" | sudo tee -a /etc/pf.conf
    sudo pfctl -f /etc/pf.conf -e
    ```
-2. **第二步 : 节点Node-C的路由设置**
-  > 将目标地址在网段192.168.10.0/24下的流量通过路由代理到本地tun并且发送到网关10.26.1.3(即 节点Node-A的虚拟地址)
 
-   **Linux**
+2. **第二步 : 节点Node-C的路由设置**
+
+> 将目标地址在网段192.168.10.0/24下的流量通过路由代理到本地tun并且发送到网关10.26.1.3(即 节点Node-A的虚拟地址)
+
+**Linux**
+
    ```
    sudo ip route add 192.168.10.0/24 via 10.26.1.3 dev <netLink_tun_name>
    ```
-   **Windows**
+
+**Windows**
+
    ```
    route add 192.168.10.0 mask 255.255.255.0 10.26.1.3 if <netLink_tun_index>
    ```
-   **Macos**
+
+**Macos**
+
    ```
    sudo route -n add 192.168.10.0/24 10.26.1.3 -interface <netLink_tun_name>
    ```

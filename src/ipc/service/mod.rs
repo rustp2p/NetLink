@@ -123,6 +123,7 @@ impl ApiService {
                         protocol: format!("{:?}", route.route_key().protocol()),
                         metric: route.metric(),
                         rtt: route.rtt(),
+                        interface: route.route_key().addr().to_string(),
                     })
                 }
                 if not_empty {
@@ -135,6 +136,7 @@ impl ApiService {
                 protocol: "Not linked".to_string(),
                 metric: 0,
                 rtt: 0,
+                interface: "".to_string(),
             })
         }
         Ok(list)
@@ -184,6 +186,7 @@ impl ApiService {
                         protocol: format!("{:?}", route.route_key().protocol()),
                         metric: route.metric(),
                         rtt: route.rtt(),
+                        interface: route.route_key().addr().to_string(),
                     })
                 }
                 if not_empty {
@@ -196,6 +199,7 @@ impl ApiService {
                 protocol: "Not linked".to_string(),
                 metric: 0,
                 rtt: 0,
+                interface: "".to_string(),
             })
         }
         Ok(list)

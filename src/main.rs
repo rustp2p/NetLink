@@ -117,28 +117,19 @@ pub fn main() -> anyhow::Result<()> {
     let args = match Args::try_parse() {
         Ok(arg) => arg,
         Err(e) => {
-            match e.kind() {
-                ErrorKind::DisplayHelp => {
-                    println!("{e}");
-                    return Ok(());
-                }
-                _ => {}
+            if e.kind() == ErrorKind::DisplayHelp {
+                println!("{e}");
+                return Ok(());
             }
-            match ArgsBack::try_parse() {
-                Ok(args) => {
-                    return client_cmd(args);
-                }
-                Err(_) => {}
+            if let Ok(args) = ArgsBack::try_parse() {
+                return client_cmd(args);
             }
-            match ArgsConfig::try_parse() {
-                Ok(args) => {
-                    let file_config = FileConfigView::read_file(&args.config)?;
-                    let worker_threads = file_config.threads;
-                    return block_on(worker_threads, async move {
-                        main_by_config_file(file_config).boxed().await
-                    });
-                }
-                Err(_) => {}
+            if let Ok(args) = ArgsConfig::try_parse() {
+                let file_config = FileConfigView::read_file(&args.config)?;
+                let worker_threads = file_config.threads;
+                return block_on(worker_threads, async move {
+                    main_by_config_file(file_config).boxed().await
+                });
             }
             println!("{e}");
             return Ok(());

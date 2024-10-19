@@ -25,7 +25,9 @@ Options:
       --tun-name <TUN_NAME>      Set tun name
   -f, --config <CONFIG>          Start using configuration file
  ```
+
 ## Start with config file
+
 <details> <summary>open</summary>
 
 ```yaml
@@ -80,6 +82,20 @@ node_ipv4: "10.26.1.2"
 ## Web UI
 
 [netlink-app](https://github.com/xmh0511/netlink-app)
+
+### Usage Instructions:
+
+#### 1. Launch using a Browser:
+
+1. Place the files generated in the dist folder of the netlink-app project into the static directory of the netlink
+   program's path.
+2. Start netlink.
+3. Access http://127.0.0.1:23336 using a browser.
+
+#### 2. Launch using Tauri Executable:
+
+1. Start netlink.
+2. Open the netlink-app.
 
 ## Features
 
@@ -189,40 +205,54 @@ Node-C <--> Node-A(192.168.10.2) <--> Node-B(192.168.10.3)
 ```
 
 1. **Step 1 : Node-A Configure network card forwarding**
-  > forward the traffic whose source is within 10.26.1.0/24 to the specified network interface
 
-   **Linux**
+> forward the traffic whose source is within 10.26.1.0/24 to the specified network interface
+
+**Linux**
+
    ```
    sudo sysctl -w net.ipv4.ip_forward=1
    sudo iptables -t nat -A POSTROUTING  -o eth0 -s 10.26.1.0/24 -j MASQUERADE
    ```
-   **Windows**
+
+**Windows**
+
    ```
    New-NetNat -Name testSubnet -InternalIPInterfaceAddressPrefix 10.26.1.0/24
    ```
-   **Macos**
+
+**Macos**
+
    ```
    sudo sysctl -w net.ipv4.ip_forward=1
    echo "nat on en0 from 10.26.1.0/24 to any -> (en0)" | sudo tee -a /etc/pf.conf
    sudo pfctl -f /etc/pf.conf -e
    ```
-2. **Step 2 : Node-C Configure route**
-  > route all traffic whose destination is within 192.168.10.0/24 to 10.26.1.3(i.e. the node_id of Node-A)
 
-   **Linux**
+2. **Step 2 : Node-C Configure route**
+
+> route all traffic whose destination is within 192.168.10.0/24 to 10.26.1.3(i.e. the node_id of Node-A)
+
+**Linux**
+
    ```
    sudo ip route add 192.168.10.0/24 via 10.26.1.3 dev <netLink_tun_name>
    ```
-   **Windows**
+
+**Windows**
+
    ```
    route add 192.168.10.0 mask 255.255.255.0 10.26.1.3 if <netLink_tun_index>
    ```
-   **Macos**
+
+**Macos**
+
    ```
    sudo route -n add 192.168.10.0/24 10.26.1.3 -interface <netLink_tun_name>
    ```
 
-At this point, Node-C can access the IP address of Node-B(192.168.10.3) via Node-A as if Node-C was directly connected to Node-B.
+At this point, Node-C can access the IP address of Node-B(192.168.10.3) via Node-A as if Node-C was directly connected
+to Node-B.
 
 ## Contact
 
