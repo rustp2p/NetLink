@@ -114,6 +114,7 @@ const CMD_PORT: u16 = 23336;
 const LISTEN_PORT: u16 = 23333;
 
 pub fn main() -> anyhow::Result<()> {
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     let args = match Args::try_parse() {
         Ok(arg) => arg,
         Err(e) => {
@@ -208,7 +209,6 @@ async fn main_by_cmd(args: Args) -> anyhow::Result<()> {
         command,
         ..
     } = args;
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     let mut split = local.split('/');
     let self_id = Ipv4Addr::from_str(split.next().expect("--local error")).expect("--local error");
     let prefix = if let Some(mask) = split.next() {
