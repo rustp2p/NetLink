@@ -2,6 +2,7 @@ use crate::config::ConfigView;
 use crate::ipc::http::entity::ApiResponse;
 use crate::ipc::service::ApiService;
 use std::net::SocketAddr;
+use std::path::Path;
 use warp::Filter;
 
 async fn close(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejection> {
@@ -13,6 +14,7 @@ async fn close(api_service: ApiService) -> Result<impl warp::Reply, warp::Reject
         Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
     }
 }
+
 async fn update_config(
     config_view: ConfigView,
     api_service: ApiService,
@@ -22,12 +24,14 @@ async fn update_config(
         Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
     }
 }
+
 async fn open(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejection> {
     match api_service.open().await {
         Ok(_) => Ok(warp::reply::json(&ApiResponse::success("success"))),
         Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
     }
 }
+
 async fn current_config(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejection> {
     match api_service.current_config() {
         Ok(rs) => Ok(warp::reply::json(&ApiResponse::success(rs))),
@@ -44,6 +48,7 @@ async fn current_info(api_service: ApiService) -> Result<impl warp::Reply, warp:
         Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
     }
 }
+
 async fn groups(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejection> {
     if api_service.is_close() {
         return Ok(warp::reply::json(&ApiResponse::not_started()));
@@ -53,6 +58,7 @@ async fn groups(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejec
         Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
     }
 }
+
 async fn current_nodes(api_service: ApiService) -> Result<impl warp::Reply, warp::Rejection> {
     if api_service.is_close() {
         return Ok(warp::reply::json(&ApiResponse::not_started()));
@@ -62,6 +68,7 @@ async fn current_nodes(api_service: ApiService) -> Result<impl warp::Reply, warp
         Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
     }
 }
+
 async fn nodes_by_group(
     group_code: String,
     api_service: ApiService,
@@ -118,7 +125,8 @@ pub async fn start(addr: String, api_service: ApiService) -> anyhow::Result<()> 
         .and(state_filter.clone())
         .and_then(update_config)
         .boxed();
-    let static_files = warp::fs::dir("static");
+    let static_files = warp::path::tail().and_then(serve_static);
+
     let routes = close_api
         .or(open_api)
         .or(current_info_api)
@@ -135,8 +143,47 @@ pub async fn start(addr: String, api_service: ApiService) -> anyhow::Result<()> 
                 .allow_methods(vec!["GET", "POST"]),
         );
     let addr: SocketAddr = addr.parse()?;
-    log::info!("start backend command server http://{addr}");
     let (_addr, server) = warp::serve(routes).try_bind_ephemeral(addr)?;
+    log::info!("start backend command server http://{addr}");
     tokio::spawn(server);
     Ok(())
+}
+
+#[derive(rust_embed::Embed)]
+#[folder = "static/"]
+struct StaticAssets;
+
+async fn serve_static(path: warp::path::Tail) -> Result<impl warp::Reply, warp::Rejection> {
+    let mut path = path.as_str();
+    if path.is_empty() {
+        path = "index.html"
+    }
+    let mut first = true;
+    loop {
+        // Attempt to read files from the current directory
+        let current_path = Path::new(".").join("static").join(path);
+        if current_path.exists() {
+            if let Ok(content) = tokio::fs::read(current_path).await {
+                let mime = mime_guess::from_path(path).first_or_octet_stream();
+                return Ok(warp::http::Response::builder()
+                    .header("Content-Type", mime.as_ref())
+                    .body(content));
+            }
+        }
+
+        // If the file does not exist in the current directory, try reading from the packaged static file
+        return if let Some(content) = StaticAssets::get(path) {
+            let mime = mime_guess::from_path(path).first_or_octet_stream();
+            Ok(warp::http::Response::builder()
+                .header("Content-Type", mime.as_ref())
+                .body(content.data.into_owned()))
+        } else {
+            if first {
+                first = false;
+                path = "index.html";
+                continue;
+            }
+            Err(warp::reject::not_found())
+        };
+    }
 }
