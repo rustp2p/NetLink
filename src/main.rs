@@ -78,8 +78,6 @@ struct ArgsConfig {
 
 #[derive(Parser, Debug)]
 struct ArgsBack {
-    #[arg(long)]
-    cmd_port: Option<u16>,
     #[command(subcommand)]
     command: Commands,
 }
