@@ -90,13 +90,12 @@ node_ipv4: "10.26.1.2"
 
 #### 一. 使用浏览器启动：
 
-1. 将netlink-app项目生成的dist下的文件放到netlink程序路径下的‘static’目录中
-2. 启动netlink
-3. 在浏览器使用'http://127.0.0.1:23336'访问
+1. 命令行启动netlink
+2. 在浏览器使用'http://127.0.0.1:23336'访问
 
 #### 二. tauri可执行文件启动：
 
-1. 启动netlink
+1. 命令行启动netlink
 2. 打开netlink-app
 
 ## 特性

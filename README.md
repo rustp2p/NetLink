@@ -87,10 +87,8 @@ node_ipv4: "10.26.1.2"
 
 #### 1. Launch using a Browser:
 
-1. Place the files generated in the dist folder of the netlink-app project into the static directory of the netlink
-   program's path.
-2. Start netlink.
-3. Access http://127.0.0.1:23336 using a browser.
+1. Start netlink.
+2. Access http://127.0.0.1:23336 using a browser.
 
 #### 2. Launch using Tauri Executable:
 
