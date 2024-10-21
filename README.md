@@ -81,7 +81,7 @@ node_ipv4: "10.26.1.2"
 
 ## Web UI
 
-[netlink-app](https://github.com/xmh0511/netlink-app)
+[netlink-app](https://github.com/rustp2p/netlink-app)
 
 ### Usage Instructions:
 
