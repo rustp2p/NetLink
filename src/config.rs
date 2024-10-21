@@ -22,9 +22,11 @@ const TCP_STUN: [&str; 3] = [
     "stun.sipnet.net",
     "stun.nextcloud.com:443",
 ];
+const DEFAULT_CONFIG_NAME: &str = "cmd";
 
 #[derive(Clone)]
 pub struct Config {
+    pub config_name: String,
     pub node_ipv4: Ipv4Addr,
     pub node_ipv6: Option<Ipv6Addr>,
     pub prefix: u8,
@@ -35,7 +37,7 @@ pub struct Config {
     pub algorithm: Option<String>,
     pub port: u16,
     pub group_code: GroupCode,
-    pub peer_addrs: Option<Vec<PeerNodeAddress>>,
+    pub peer_addrs: Vec<PeerNodeAddress>,
     pub bind_dev_name: Option<String>,
     pub iface_option: Option<LocalInterface>,
     pub exit_node: Option<Ipv4Addr>,
@@ -46,6 +48,7 @@ pub struct Config {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ConfigView {
+    pub config_name: String,
     pub group_code: String,
     pub node_ipv4: String,
     pub prefix: u8,
@@ -55,7 +58,7 @@ pub struct ConfigView {
     pub encrypt: Option<String>,
     pub algorithm: Option<String>,
     pub port: u16,
-    pub peer: Option<Vec<String>>,
+    pub peer: Vec<String>,
     pub bind_dev_name: Option<String>,
     pub exit_node: Option<String>,
 
@@ -66,6 +69,7 @@ pub struct ConfigView {
 impl Default for ConfigView {
     fn default() -> Self {
         Self {
+            config_name: DEFAULT_CONFIG_NAME.to_string(),
             group_code: "".to_string(),
             node_ipv4: "".to_string(),
             prefix: 24,
@@ -75,7 +79,7 @@ impl Default for ConfigView {
             encrypt: None,
             algorithm: None,
             port: LISTEN_PORT,
-            peer: None,
+            peer: vec![],
             bind_dev_name: None,
             exit_node: None,
             udp_stun: UDP_STUN.iter().map(|v| v.to_string()).collect(),
@@ -100,7 +104,7 @@ pub struct FileConfigView {
     pub encrypt: Option<String>,
     pub algorithm: Option<String>,
     pub port: u16,
-    pub peer: Option<Vec<String>>,
+    pub peer: Vec<String>,
     pub bind_dev_name: Option<String>,
     pub exit_node: Option<String>,
 
@@ -129,6 +133,7 @@ impl FileConfigView {
 impl From<FileConfigView> for ConfigView {
     fn from(value: FileConfigView) -> Self {
         Self {
+            config_name: DEFAULT_CONFIG_NAME.to_string(),
             group_code: value.group_code,
             node_ipv4: value.node_ipv4,
             prefix: value.prefix,
@@ -162,7 +167,7 @@ impl Default for FileConfigView {
             encrypt: None,
             algorithm: Some("chacha20-poly1305".to_string()),
             port: LISTEN_PORT,
-            peer: None,
+            peer: vec![],
             bind_dev_name: None,
             exit_node: None,
             udp_stun: UDP_STUN.iter().map(|v| v.to_string()).collect(),
@@ -174,6 +179,7 @@ impl Default for FileConfigView {
 impl Config {
     pub fn to_config_view(&self) -> ConfigView {
         ConfigView {
+            config_name: self.config_name.clone(),
             group_code: group_code_to_string(&self.group_code),
             node_ipv4: format!("{}", self.node_ipv4),
             prefix: self.prefix,
@@ -186,7 +192,9 @@ impl Config {
             peer: self
                 .peer_addrs
                 .clone()
-                .map(|v| v.iter().map(|v| v.to_string()).collect()),
+                .iter()
+                .map(|v| v.to_string())
+                .collect(),
             bind_dev_name: self.bind_dev_name.clone(),
             exit_node: self.exit_node.map(|v| format!("{v}")),
             udp_stun: self.udp_stun.clone(),
@@ -235,16 +243,12 @@ impl ConfigView {
         } else {
             self.encrypt.map(Cipher::new_chacha20_poly1305)
         };
-        let mut peer_addrs = None;
-        if let Some(peers) = self.peer {
-            let mut list = Vec::new();
-            for addr in peers {
-                list.push(
-                    addr.parse::<PeerNodeAddress>()
-                        .map_err(|e| anyhow::anyhow!("peer error: {e}"))?,
-                )
-            }
-            peer_addrs.replace(list);
+        let mut peer_addrs = Vec::new();
+        for addr in self.peer {
+            peer_addrs.push(
+                addr.parse::<PeerNodeAddress>()
+                    .map_err(|e| anyhow::anyhow!("peer error: {e}"))?,
+            )
         }
 
         let mut iface_option = None;
@@ -273,6 +277,7 @@ impl ConfigView {
             None
         };
         Ok(Config {
+            config_name: self.config_name,
             node_ipv4,
             node_ipv6,
             prefix: self.prefix,

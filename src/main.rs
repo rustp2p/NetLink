@@ -32,7 +32,7 @@ struct Args {
     /// Peer node address.
     /// e.g.: -p tcp://192.168.10.13:23333 -p udp://192.168.10.23:23333
     #[arg(short, long)]
-    peer: Option<Vec<String>>,
+    peer: Vec<String>,
     /// Local node IP and prefix.If there is no 'prefix', Will not enable Tun.
     /// e.g.: -l 10.26.0.2/24
     #[arg(short, long, value_name = "LOCAL IP")]
@@ -279,7 +279,7 @@ async fn start(api_service: ApiService) -> anyhow::Result<()> {
     let mut pipe_config = PipeConfig::empty()
         .set_udp_pipe_config(udp_config)
         .set_tcp_pipe_config(tcp_config)
-        .set_direct_addrs(config.peer_addrs.unwrap_or_default())
+        .set_direct_addrs(config.peer_addrs)
         .set_group_code(config.group_code)
         .set_node_id(config.node_ipv4.into())
         .set_udp_stun_servers(config.udp_stun)
