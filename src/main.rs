@@ -128,7 +128,7 @@ pub fn main() -> anyhow::Result<()> {
                 let file_config = FileConfigView::read_file(&args.config)?;
                 let worker_threads = file_config.threads;
                 return block_on(worker_threads, async move {
-                    main_by_config_file(file_config).boxed().await
+                    main_by_config_file(file_config).await
                 });
             }
             println!("{e}");
@@ -136,10 +136,7 @@ pub fn main() -> anyhow::Result<()> {
         }
     };
     let worker_threads = args.threads.unwrap_or(2);
-    block_on(
-        worker_threads,
-        async move { main_by_cmd(args).boxed().await },
-    )
+    block_on(worker_threads, async move { main_by_cmd(args).await })
 }
 
 fn block_on<F: Future>(worker_threads: usize, f: F) -> F::Output {
@@ -289,7 +286,7 @@ async fn start(api_service: ApiService) -> anyhow::Result<()> {
         pipe_config = pipe_config.set_default_interface(iface);
     }
 
-    let mut pipe = Pipe::new(pipe_config).await?;
+    let mut pipe = Pipe::new(pipe_config).boxed().await?;
     let shutdown_manager = ShutdownManager::<()>::new();
 
     api_service.set_pipe(pipe.writer().clone(), shutdown_manager.clone());
