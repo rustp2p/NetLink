@@ -25,6 +25,7 @@ mod exit_route;
 mod ipc;
 mod platform;
 mod route_listen;
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]

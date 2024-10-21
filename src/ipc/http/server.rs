@@ -200,12 +200,14 @@ async fn serve_static(path: warp::path::Tail) -> Result<impl warp::Reply, warp::
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ApplicationInfo {
+    version: String,
     algorithm_list: Vec<String>,
 }
 
 impl Default for ApplicationInfo {
     fn default() -> Self {
         Self {
+            version: crate::VERSION.to_string(),
             algorithm_list: vec![
                 "aes-gcm".to_string(),
                 "chacha20-poly1305".to_string(),
