@@ -98,16 +98,10 @@ jobs:
       - name: Use strawberry perl
         if: startsWith(matrix.os, 'windows')
         run: echo OPENSSL_SRC_PERL=C:/Strawberry/perl/bin/perl >> $GITHUB_ENV
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: 18
-      - name: Update submodule
-        run: git submodule update --remote
       - name: Build web
         run: |
           cd web-app
-          npm install --save-dev vite
+          npm install
           npm run build
           cd ..
           mkdir static
