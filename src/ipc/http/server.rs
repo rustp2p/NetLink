@@ -1,6 +1,7 @@
 use crate::config::ConfigView;
 use crate::ipc::http::entity::ApiResponse;
 use crate::ipc::service::ApiService;
+use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::path::Path;
 use warp::Filter;
@@ -14,7 +15,11 @@ async fn close(api_service: ApiService) -> Result<impl warp::Reply, warp::Reject
         Err(e) => Ok(warp::reply::json(&ApiResponse::failed(format!("{e}")))),
     }
 }
-
+async fn application_info() -> Result<impl warp::Reply, warp::Rejection> {
+    Ok(warp::reply::json(&ApiResponse::success(
+        ApplicationInfo::default(),
+    )))
+}
 async fn update_config(
     config_view: ConfigView,
     api_service: ApiService,
@@ -84,6 +89,10 @@ async fn nodes_by_group(
 
 pub async fn start(addr: String, api_service: ApiService) -> anyhow::Result<()> {
     let state_filter = warp::any().map(move || api_service.clone());
+    let application_info_api = warp::path!("api" / "application-info")
+        .and_then(application_info)
+        .boxed();
+
     let close_api = warp::path!("api" / "close")
         .and(warp::get())
         .and(state_filter.clone())
@@ -127,7 +136,8 @@ pub async fn start(addr: String, api_service: ApiService) -> anyhow::Result<()> 
         .boxed();
     let static_files = warp::path::tail().and_then(serve_static);
 
-    let routes = close_api
+    let routes = application_info_api
+        .or(close_api)
         .or(open_api)
         .or(current_info_api)
         .or(groups_api)
@@ -185,5 +195,22 @@ async fn serve_static(path: warp::path::Tail) -> Result<impl warp::Reply, warp::
             }
             Err(warp::reject::not_found())
         };
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ApplicationInfo {
+    algorithm_list: Vec<String>,
+}
+
+impl Default for ApplicationInfo {
+    fn default() -> Self {
+        Self {
+            algorithm_list: vec![
+                "aes-gcm".to_string(),
+                "chacha20-poly1305".to_string(),
+                "xor".to_string(),
+            ],
+        }
     }
 }
