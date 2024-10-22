@@ -7,7 +7,7 @@ use rustp2p::protocol::node_id::GroupCode;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 
-type PipeInfo = Arc<Mutex<Option<(PipeWriter, ShutdownManager<()>)>>>;
+type PipeInfo = Arc<Mutex<Option<(Arc<PipeWriter>, ShutdownManager<()>)>>>;
 #[derive(Clone)]
 pub struct ApiService {
     config: Arc<Mutex<Config>>,
@@ -27,20 +27,21 @@ impl ApiService {
     pub fn save_config(&self, config: Config) {
         *self.config.lock() = config;
     }
-    pub fn set_pipe(&self, pipe_writer: PipeWriter, shutdown_manager: ShutdownManager<()>) {
-        if let Some((v1, v2)) = self.pipe.lock().replace((pipe_writer, shutdown_manager)) {
-            if let Err(e) = v1.shutdown() {
-                log::error!("shutdown failed {e:?}");
-            }
-            if let Err(e) = v2.trigger_shutdown(()) {
-                log::error!("shutdown failed {e:?}");
-            }
-        }
+    pub fn set_pipe(&self, pipe_writer: Arc<PipeWriter>, shutdown_manager: ShutdownManager<()>) {
+        self.pipe.lock().replace((pipe_writer, shutdown_manager));
+        // if let Some((v1, v2)) = self.pipe.lock().replace((pipe_writer, shutdown_manager)) {
+        //     if let Err(e) = v1.shutdown() {
+        //         log::error!("shutdown failed {e:?}");
+        //     }
+        //     if let Err(e) = v2.trigger_shutdown(()) {
+        //         log::error!("shutdown failed {e:?}");
+        //     }
+        // }
     }
 }
 
 impl ApiService {
-    pub fn pipe_writer(&self) -> Option<PipeWriter> {
+    pub fn pipe_writer(&self) -> Option<Arc<PipeWriter>> {
         self.pipe.lock().as_ref().map(|(v1, _)| v1.clone())
     }
     pub fn is_close(&self) -> bool {
@@ -63,7 +64,7 @@ impl ApiService {
         if self.pipe.lock().is_some() {
             Err(anyhow::anyhow!("Started"))?
         }
-        crate::start(self.clone()).await?;
+        crate::netlink_task::start_netlink(self).await?;
         Ok(())
     }
     pub fn current_config(&self) -> anyhow::Result<ConfigView> {
