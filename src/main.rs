@@ -202,7 +202,7 @@ async fn main_by_cmd(args: Args) -> anyhow::Result<()> {
     let mut split = local.split('/');
     let self_id = Ipv4Addr::from_str(split.next().expect("--local error")).expect("--local error");
     let prefix = if let Some(mask) = split.next() {
-        u8::from_str(mask).expect("--local error")
+        u8::from_str(mask).expect("unable to parse the prefix in the arguments for --local")
     } else {
         0
     };
