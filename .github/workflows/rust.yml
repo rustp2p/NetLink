@@ -104,7 +104,6 @@ jobs:
           npm install
           npm run build
           cd ..
-          mkdir static
           cp -r ./web-app/dist/* ./static/
       - name: List
         run: find ./

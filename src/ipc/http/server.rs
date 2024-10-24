@@ -160,6 +160,7 @@ pub async fn start(addr: SocketAddr, api_service: ApiService) -> anyhow::Result<
 
 #[derive(rust_embed::Embed)]
 #[folder = "static/"]
+#[exclude = "README.md"]
 struct StaticAssets;
 
 async fn serve_static(path: warp::path::Tail) -> Result<impl warp::Reply, warp::Rejection> {
