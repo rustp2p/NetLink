@@ -1,11 +1,11 @@
 use std::io;
-
+use std::net::SocketAddr;
 use tokio::net::UdpSocket;
 
 use crate::ipc::service::ApiService;
 
-pub async fn start(addr: String, api_service: ApiService) -> io::Result<()> {
-    let udp = UdpSocket::bind(&addr).await?;
+pub async fn start(addr: SocketAddr, api_service: ApiService) -> io::Result<()> {
+    let udp = UdpSocket::bind(addr).await?;
     log::info!("start backend command server udp://{addr}");
     tokio::spawn(async move {
         if let Err(e) = start0(udp, api_service).await {
