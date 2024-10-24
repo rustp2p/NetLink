@@ -6,7 +6,7 @@ use anyhow::anyhow;
 
 use clap::error::ErrorKind;
 
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 
 use crate::config::{ConfigView, FileConfigView};
@@ -85,7 +85,7 @@ enum Commands {
     Cmd {
         /// Set backend server host. default 127.0.0.1
         #[arg(long)]
-        cmd_host: Option<String>,
+        cmd_host: Option<IpAddr>,
         ///  Set backend server port. When opening multiple programs, this port needs to be set. default 23336
         #[arg(long)]
         cmd_port: Option<u16>,
@@ -104,7 +104,7 @@ enum Commands {
     },
 }
 
-const CMD_HOST: &str = "127.0.0.1";
+const CMD_HOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 const CMD_PORT: u16 = 23336;
 const LISTEN_PORT: u16 = 23333;
 
@@ -160,7 +160,7 @@ async fn client_cmd(args: ArgsBack) -> anyhow::Result<()> {
         groups,
         others,
     } = args.command;
-    let host = cmd_host.unwrap_or(CMD_HOST.to_string());
+    let host = cmd_host.unwrap_or(CMD_HOST);
     let port = cmd_port.unwrap_or(CMD_PORT);
     let addr = format!("{host}:{port}");
     if nodes {
@@ -228,14 +228,7 @@ async fn main_by_cmd(args: Args) -> anyhow::Result<()> {
         if port == 0 {
             None
         } else {
-            Some(
-                SocketAddr::from_str(&format!(
-                    "{}:{}",
-                    cmd_host.unwrap_or(CMD_HOST.to_string()),
-                    port
-                ))
-                .unwrap(),
-            )
+            Some(SocketAddr::new(cmd_host.unwrap_or(CMD_HOST), port))
         }
     } else {
         Some(SocketAddr::from_str(&format!("{CMD_HOST}:{CMD_PORT}")).unwrap())
