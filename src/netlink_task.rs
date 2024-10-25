@@ -9,6 +9,7 @@ use rustp2p::{
 };
 use tun_rs::{AbstractDevice, AsyncDevice};
 
+use crate::config::Config;
 use crate::{
     cipher, exit_route,
     ipc::service::ApiService,
@@ -17,8 +18,23 @@ use crate::{
 use tokio::sync::mpsc::Sender;
 
 pub async fn start_netlink(api_service: &ApiService) -> anyhow::Result<()> {
+    let shutdown_manager = ShutdownManager::<()>::new();
     let config = api_service.load_config();
-
+    match start_netlink0(shutdown_manager.clone(), config).await {
+        Ok(writer) => {
+            api_service.set_pipe(writer, shutdown_manager);
+            Ok(())
+        }
+        Err(e) => {
+            _ = shutdown_manager.trigger_shutdown(());
+            Err(e)
+        }
+    }
+}
+async fn start_netlink0(
+    shutdown_manager: ShutdownManager<()>,
+    config: Config,
+) -> anyhow::Result<Arc<PipeWriter>> {
     let udp_config = UdpPipeConfig::default().set_simple_udp_port(config.port);
     let tcp_config = TcpPipeConfig::default().set_tcp_port(config.port);
     let mut pipe_config = PipeConfig::empty()
@@ -35,7 +51,6 @@ pub async fn start_netlink(api_service: &ApiService) -> anyhow::Result<()> {
 
     let mut pipe = Pipe::new(pipe_config).boxed().await?;
     let writer = Arc::new(pipe.writer());
-    let shutdown_manager = ShutdownManager::<()>::new();
 
     let (sender, mut receiver) = tokio::sync::mpsc::channel::<RecvUserData>(256);
     if config.prefix > 0 {
@@ -135,8 +150,7 @@ pub async fn start_netlink(api_service: &ApiService) -> anyhow::Result<()> {
             }
         }
     }));
-    api_service.set_pipe(writer, shutdown_manager);
-    Ok(())
+    Ok(writer)
 }
 
 fn gen_salt(src_id: &NodeID, dest_id: &NodeID) -> [u8; 12] {

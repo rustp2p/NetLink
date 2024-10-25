@@ -218,7 +218,12 @@ async fn main_by_cmd(args: Args) -> anyhow::Result<()> {
         exit_node,
         ..ConfigView::default()
     };
-    let api_addr = if let Some(Commands::Cmd { api_addr, api_disable, .. }) = command {
+    let api_addr = if let Some(Commands::Cmd {
+        api_addr,
+        api_disable,
+        ..
+    }) = command
+    {
         if api_disable {
             None
         } else {
