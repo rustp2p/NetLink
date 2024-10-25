@@ -34,10 +34,10 @@ Options:
 ## ./netLink --config <config_file_path>
 ## On demand use, unnecessary configurations can be deleted
 
-## Command server host. default is "127.0.0.1"
-#cmd_host: "127.0.0.1"
-## Command server port. default is 23336
-#cmd_port: 23336
+## Api server host. default is "127.0.0.1:23336"
+#api_addr: "127.0.0.1:23336"
+## Disable api. api_disable:true
+#api_disable: false
 ## Number of program task threads. default is 2
 #threads: 2
 ## group code. cannot be empty

@@ -1,15 +1,17 @@
-use crate::cipher::Cipher;
-use crate::{CMD_HOST, CMD_PORT, LISTEN_PORT};
+use std::fmt;
+use std::fmt::{Debug, Display, Formatter};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::str::FromStr;
+
 use anyhow::anyhow;
 use rustp2p::config::LocalInterface;
 use rustp2p::pipe::PeerNodeAddress;
 use rustp2p::protocol::node_id::GroupCode;
 use serde::de::Visitor;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-use std::fmt;
-use std::fmt::{Debug, Display, Formatter};
-use std::net::{Ipv4Addr, Ipv6Addr};
-use std::str::FromStr;
+
+use crate::cipher::Cipher;
+use crate::{CMD_ADDRESS, DEFAULT_ALGORITHM, LISTEN_PORT};
 
 const UDP_STUN: [&str; 6] = [
     "stun.miwifi.com",
@@ -36,7 +38,7 @@ pub struct Config {
     pub tun_name: Option<String>,
     pub cipher: Option<Cipher>,
     pub encrypt: Option<String>,
-    pub algorithm: Option<String>,
+    pub algorithm: String,
     pub port: u16,
     pub group_code: GroupCode,
     pub peer: Vec<PeerAddress>,
@@ -58,7 +60,7 @@ pub struct ConfigView {
     pub prefix_v6: u8,
     pub tun_name: Option<String>,
     pub encrypt: Option<String>,
-    pub algorithm: Option<String>,
+    pub algorithm: String,
     pub port: u16,
     pub peer: Vec<PeerAddress>,
     pub bind_dev_name: Option<String>,
@@ -126,7 +128,7 @@ impl Default for ConfigView {
             prefix_v6: 96,
             tun_name: None,
             encrypt: None,
-            algorithm: None,
+            algorithm: DEFAULT_ALGORITHM.to_string(),
             port: LISTEN_PORT,
             peer: vec![],
             bind_dev_name: None,
@@ -140,8 +142,8 @@ impl Default for ConfigView {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct FileConfigView {
-    pub cmd_host: String,
-    pub cmd_port: u16,
+    pub api_addr: SocketAddr,
+    pub api_disable: bool,
     pub threads: usize,
 
     pub group_code: String,
@@ -151,7 +153,7 @@ pub struct FileConfigView {
     pub prefix_v6: u8,
     pub tun_name: Option<String>,
     pub encrypt: Option<String>,
-    pub algorithm: Option<String>,
+    pub algorithm: String,
     pub port: u16,
     pub peer: Vec<String>,
     pub bind_dev_name: Option<String>,
@@ -213,8 +215,8 @@ impl TryFrom<FileConfigView> for ConfigView {
 impl Default for FileConfigView {
     fn default() -> Self {
         Self {
-            cmd_host: CMD_HOST.to_string(),
-            cmd_port: CMD_PORT,
+            api_addr: CMD_ADDRESS,
+            api_disable: false,
             threads: 2,
             group_code: "".to_string(),
             node_ipv4: "".to_string(),
@@ -223,7 +225,7 @@ impl Default for FileConfigView {
             prefix_v6: 96,
             tun_name: None,
             encrypt: None,
-            algorithm: Some("chacha20-poly1305".to_string()),
+            algorithm: DEFAULT_ALGORITHM.to_string(),
             port: LISTEN_PORT,
             peer: vec![],
             bind_dev_name: None,
@@ -286,15 +288,11 @@ impl ConfigView {
         };
         let encrypt = self.encrypt.clone();
         let algorithm = self.algorithm.clone();
-        let cipher = if let Some(v) = self.algorithm {
-            match v.to_lowercase().as_str() {
-                "aes-gcm" => self.encrypt.map(Cipher::new_aes_gcm),
-                "chacha20-poly1305" => self.encrypt.map(Cipher::new_chacha20_poly1305),
-                "xor" => self.encrypt.map(Cipher::new_xor),
-                t => Err(anyhow::anyhow!("algorithm error: {t}"))?,
-            }
-        } else {
-            self.encrypt.map(Cipher::new_chacha20_poly1305)
+        let cipher = match self.algorithm.to_lowercase().as_str() {
+            "aes-gcm" => self.encrypt.map(Cipher::new_aes_gcm),
+            "chacha20-poly1305" => self.encrypt.map(Cipher::new_chacha20_poly1305),
+            "xor" => self.encrypt.map(Cipher::new_xor),
+            t => Err(anyhow::anyhow!("algorithm error: {t}"))?,
         };
 
         let mut iface_option = None;

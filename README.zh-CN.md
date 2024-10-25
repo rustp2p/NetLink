@@ -37,10 +37,10 @@ Options:
 ## ./netLink --config <config_file_path>
 ## 按需修改
 
-## 后台命令服务监听地址. 默认值 "127.0.0.1"
-#cmd_host: "127.0.0.1"
-## 后台命令服务监听端口. 默认值 23336
-#cmd_port: 23336
+## 后台api服务监听地址. 默认值 "127.0.0.1:23336"
+#api_addr: "127.0.0.1:23336"
+## 不使用api服务，则设置 api_disable:true
+#api_disable: false
 ## 工作线程数. 默认值 2
 #threads: 2
 ## 组编号，必填

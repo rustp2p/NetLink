@@ -36,23 +36,23 @@ struct Args {
     /// Nodes with the same group_code can form a network (Maximum length 16).
     #[arg(short, long, value_name = "GROUP CODE")]
     group_code: String,
-    /// Listen local port, default is 23333
-    #[arg(short = 'P', long)]
-    port: Option<u16>,
+    /// Listen local port
+    #[arg(short = 'P', long, default_value = LISTEN_PORT_STR)]
+    port: u16,
     /// Bind the outgoing network interface (using the interface name).
     /// e.g.: -b eth0
     #[arg(short, long, value_name = "DEVICE NAME")]
     bind_dev: Option<String>,
-    /// Set the number of threads, default is 2
-    #[arg(long)]
-    threads: Option<usize>,
+    /// Set the number of threads
+    #[arg(long, default_value = "2")]
+    threads: usize,
     /// Enable data encryption.
     /// e.g.: -e "password"
     #[arg(short, long, value_name = "PASSWORD")]
     encrypt: Option<String>,
-    /// Set encryption algorithm. Optional aes-gcm/chacha20-poly1305/xor, default is chacha20-poly1305
-    #[arg(short, long)]
-    algorithm: Option<String>,
+    /// Set encryption algorithm. Optional aes-gcm/chacha20-poly1305/xor
+    #[arg(short, long, default_value = DEFAULT_ALGORITHM)]
+    algorithm: String,
     /// Global exit node,please use it together with '--bind-dev'
     #[arg(long)]
     exit_node: Option<String>,
@@ -82,12 +82,12 @@ struct ArgsBack {
 enum Commands {
     /// Backend command
     Cmd {
-        /// Set backend cmd/http server address. default '127.0.0.1:23336'
-        #[arg(long)]
-        addr: Option<String>,
+        /// Set backend cmd/http server address
+        #[arg(long, default_value = CMD_ADDRESS_STR)]
+        api_addr: String,
         /// Disable backend cmd/http server
         #[arg(long)]
-        disable: bool,
+        api_disable: bool,
         /// View information about the current program
         #[arg(long)]
         info: bool,
@@ -103,10 +103,11 @@ enum Commands {
     },
 }
 
-const CMD_HOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-const CMD_PORT: u16 = 23336;
-const CMD_ADDRESS: SocketAddr = SocketAddr::new(CMD_HOST, CMD_PORT);
+const CMD_ADDRESS: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 23336);
+const CMD_ADDRESS_STR: &str = "127.0.0.1:23336";
 const LISTEN_PORT: u16 = 23333;
+const LISTEN_PORT_STR: &str = "23333";
+const DEFAULT_ALGORITHM: &str = "chacha20-poly1305";
 
 pub fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
@@ -129,7 +130,7 @@ pub fn main() -> anyhow::Result<()> {
             return Ok(());
         }
     };
-    let worker_threads = args.threads.unwrap_or(2);
+    let worker_threads = args.threads;
     block_on(worker_threads, main_by_cmd(args))
 }
 
@@ -153,28 +154,27 @@ fn block_on<F: Future>(worker_threads: usize, f: F) -> F::Output {
 #[tokio::main(flavor = "current_thread")]
 async fn client_cmd(args: ArgsBack) -> anyhow::Result<()> {
     let Commands::Cmd {
-        addr,
+        api_addr,
         info,
         nodes,
         groups,
         others,
         ..
     } = args.command;
-    let addr = addr.unwrap_or(CMD_ADDRESS.to_string());
     if nodes {
-        if let Err(e) = ipc::udp::client::nodes(addr).await {
+        if let Err(e) = ipc::udp::client::nodes(api_addr).await {
             Err(anyhow!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}"))?;
         }
     } else if groups {
-        if let Err(e) = ipc::udp::client::groups(addr).await {
+        if let Err(e) = ipc::udp::client::groups(api_addr).await {
             Err(anyhow!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}"))?;
         }
     } else if let Some(group_code) = others {
-        if let Err(e) = ipc::udp::client::other_nodes(addr, group_code).await {
+        if let Err(e) = ipc::udp::client::other_nodes(api_addr, group_code).await {
             Err(anyhow!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}"))?;
         }
     } else if info {
-        if let Err(e) = ipc::udp::client::current_info(addr).await {
+        if let Err(e) = ipc::udp::client::current_info(api_addr).await {
             Err(anyhow!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}"))?;
         }
     } else {
@@ -212,40 +212,32 @@ async fn main_by_cmd(args: Args) -> anyhow::Result<()> {
         tun_name,
         encrypt,
         algorithm,
-        port: port.unwrap_or(LISTEN_PORT),
+        port,
         peer,
         bind_dev_name: bind_dev,
         exit_node,
         ..ConfigView::default()
     };
-    let addr = if let Some(Commands::Cmd { addr, disable, .. }) = command {
-        if disable {
+    let api_addr = if let Some(Commands::Cmd { api_addr, api_disable, .. }) = command {
+        if api_disable {
             None
-        } else if let Some(addr) = addr {
-            let addr = SocketAddr::from_str(&addr)
-                .map_err(|e| anyhow::anyhow!("cmd --addr {addr:?}, {e}"))?;
-            Some(addr)
         } else {
-            Some(CMD_ADDRESS)
+            let addr = SocketAddr::from_str(&api_addr)
+                .map_err(|e| anyhow::anyhow!("cmd --addr {api_addr:?}, {e}"))?;
+            Some(addr)
         }
     } else {
         Some(CMD_ADDRESS)
     };
-    start_by_config(config_view, addr).await?;
+    start_by_config(config_view, api_addr).await?;
     Ok(())
 }
 
 async fn main_by_config_file(file_config: FileConfigView) -> anyhow::Result<()> {
-    let addr = if file_config.cmd_port == 0 {
+    let addr = if file_config.api_disable {
         None
     } else {
-        Some(
-            SocketAddr::from_str(&format!(
-                "{}:{}",
-                file_config.cmd_host, file_config.cmd_port
-            ))
-            .unwrap(),
-        )
+        Some(file_config.api_addr)
     };
     let config_view = ConfigView::try_from(file_config)?;
     start_by_config(config_view, addr).await
