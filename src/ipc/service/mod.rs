@@ -148,14 +148,12 @@ impl ApiService {
         } else {
             Err(anyhow::anyhow!("Not Started"))?
         };
-        if let Some(group_code) = crate::string_to_group_code(group_code) {
-            let current_group_code = pipe_writer.current_group_code();
-            if group_code == current_group_code {
-                return self.current_nodes();
-            }
-            return self.other_nodes(&group_code);
+        let group_code = crate::config::string_to_group_code(group_code)?;
+        let current_group_code = pipe_writer.current_group_code();
+        if group_code == current_group_code {
+            return self.current_nodes();
         }
-        Err(anyhow::anyhow!("group_code error"))
+        self.other_nodes(&group_code)
     }
     pub fn other_nodes(&self, group_code: &GroupCode) -> anyhow::Result<Vec<RouteItem>> {
         let pipe_writer = if let Some(pipe_writer) = self.pipe_writer() {

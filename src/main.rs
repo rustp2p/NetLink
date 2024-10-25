@@ -11,8 +11,6 @@ use crate::ipc::service::ApiService;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 
-use rustp2p::protocol::node_id::GroupCode;
-
 mod cipher;
 mod config;
 mod exit_route;
@@ -273,15 +271,4 @@ async fn start_by_config(
     _ = api_service.close();
     log::info!("exit!!!!");
     Ok(())
-}
-
-fn string_to_group_code(input: &str) -> Option<GroupCode> {
-    let mut array = [0u8; 16];
-    let bytes = input.as_bytes();
-    if bytes.len() > 16 {
-        return None;
-    }
-    let len = bytes.len();
-    array[..len].copy_from_slice(&bytes[..len]);
-    Some(array.into())
 }
