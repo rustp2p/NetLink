@@ -110,7 +110,7 @@ const DEFAULT_ALGORITHM: &str = "chacha20-poly1305";
 pub fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     let args = match Args::try_parse() {
-        Ok(arg) => arg,
+        Ok(arg) => Some(arg),
         Err(e) => {
             if e.kind() == ErrorKind::DisplayHelp {
                 println!("{e}");
@@ -124,12 +124,16 @@ pub fn main() -> anyhow::Result<()> {
                 let worker_threads = file_config.threads;
                 return block_on(worker_threads, main_by_config_file(file_config));
             }
-            println!("{e}");
-            return Ok(());
+
+            None
         }
     };
-    let worker_threads = args.threads;
-    block_on(worker_threads, main_by_cmd(args))
+    if let Some(args) = args {
+        let worker_threads = args.threads;
+        return block_on(worker_threads, main_by_cmd(Some(args)));
+    } else {
+        return block_on(2, main_by_cmd(None));
+    }
 }
 
 fn block_on<F: Future>(worker_threads: usize, f: F) -> F::Output {
@@ -181,58 +185,64 @@ async fn client_cmd(args: ArgsBack) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn main_by_cmd(args: Args) -> anyhow::Result<()> {
-    let Args {
-        peer,
-        local,
-        group_code,
-        port,
-        bind_dev,
-        encrypt,
-        algorithm,
-        exit_node,
-        tun_name,
-        command,
-        ..
-    } = args;
-    let mut split = local.split('/');
-    let self_id = Ipv4Addr::from_str(split.next().expect("--local error")).expect("--local error");
-    let prefix = if let Some(mask) = split.next() {
-        u8::from_str(mask).expect("unable to parse the prefix in the arguments for --local")
-    } else {
-        0
-    };
-    let config_view = ConfigView {
-        group_code,
-        node_ipv4: format!("{self_id}"),
-        prefix,
-        node_ipv6: None,
-        tun_name,
-        encrypt,
-        algorithm,
-        port,
-        peer,
-        bind_dev_name: bind_dev,
-        exit_node,
-        ..ConfigView::default()
-    };
-    let api_addr = if let Some(Commands::Cmd {
-        api_addr,
-        api_disable,
-        ..
-    }) = command
-    {
-        if api_disable {
-            None
+async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
+    if let Some(args) = args {
+        let Args {
+            peer,
+            local,
+            group_code,
+            port,
+            bind_dev,
+            encrypt,
+            algorithm,
+            exit_node,
+            tun_name,
+            command,
+            ..
+        } = args;
+        let mut split = local.split('/');
+        let self_id =
+            Ipv4Addr::from_str(split.next().expect("--local error")).expect("--local error");
+        let prefix = if let Some(mask) = split.next() {
+            u8::from_str(mask).expect("unable to parse the prefix in the arguments for --local")
         } else {
-            let addr = SocketAddr::from_str(&api_addr)
-                .map_err(|e| anyhow::anyhow!("cmd --addr {api_addr:?}, {e}"))?;
-            Some(addr)
-        }
+            0
+        };
+        let config_view = ConfigView {
+            group_code,
+            node_ipv4: format!("{self_id}"),
+            prefix,
+            node_ipv6: None,
+            tun_name,
+            encrypt,
+            algorithm,
+            port,
+            peer,
+            bind_dev_name: bind_dev,
+            exit_node,
+            ..ConfigView::default()
+        };
+        let api_addr = if let Some(Commands::Cmd {
+            api_addr,
+            api_disable,
+            ..
+        }) = command
+        {
+            if api_disable {
+                None
+            } else {
+                let addr = SocketAddr::from_str(&api_addr)
+                    .map_err(|e| anyhow::anyhow!("cmd --addr {api_addr:?}, {e}"))?;
+                Some(addr)
+            }
+        } else {
+            Some(CMD_ADDRESS)
+        };
+        start_by_config(Some(config_view), api_addr).await?;
     } else {
-        Some(CMD_ADDRESS)
-    };
-    start_by_config(config_view, api_addr).await?;
+        start_by_config(None, Some(SocketAddr::from_str(CMD_ADDRESS_STR).unwrap())).await?;
+    }
+
     Ok(())
 }
 
@@ -243,14 +253,18 @@ async fn main_by_config_file(file_config: FileConfigView) -> anyhow::Result<()> 
         Some(file_config.api_addr)
     };
     let config_view = ConfigView::try_from(file_config)?;
-    start_by_config(config_view, addr).await
+    start_by_config(Some(config_view), addr).await
 }
 
 async fn start_by_config(
-    config_view: ConfigView,
+    config_view: Option<ConfigView>,
     cmd_server_addr: Option<SocketAddr>,
 ) -> anyhow::Result<()> {
-    let config = config_view.into_config()?;
+    let config = if let Some(c) = config_view {
+        Some(c.into_config()?)
+    } else {
+        None
+    };
 
     let api_service = ApiService::new(config);
     if let Some(cmd_server_addr) = cmd_server_addr {

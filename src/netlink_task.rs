@@ -19,7 +19,9 @@ use tokio::sync::mpsc::Sender;
 
 pub async fn start_netlink(api_service: &ApiService) -> anyhow::Result<()> {
     let shutdown_manager = ShutdownManager::<()>::new();
-    let config = api_service.load_config();
+    let Some(config) = api_service.load_config() else {
+        return Ok(());
+    };
     match start_netlink0(shutdown_manager.clone(), config).await {
         Ok(writer) => {
             api_service.set_pipe(writer, shutdown_manager);

@@ -10,22 +10,22 @@ use std::sync::Arc;
 type PipeInfo = Arc<Mutex<Option<(Arc<PipeWriter>, ShutdownManager<()>)>>>;
 #[derive(Clone)]
 pub struct ApiService {
-    config: Arc<Mutex<Config>>,
+    config: Arc<Mutex<Option<Config>>>,
     pipe: PipeInfo,
 }
 
 impl ApiService {
-    pub fn new(config: Config) -> ApiService {
+    pub fn new(config: Option<Config>) -> ApiService {
         Self {
             pipe: Default::default(),
             config: Arc::new(Mutex::new(config)),
         }
     }
-    pub fn load_config(&self) -> Config {
+    pub fn load_config(&self) -> Option<Config> {
         self.config.lock().clone()
     }
     pub fn save_config(&self, config: Config) {
-        *self.config.lock() = config;
+        *self.config.lock() = Some(config);
     }
     pub fn set_pipe(&self, pipe_writer: Arc<PipeWriter>, shutdown_manager: ShutdownManager<()>) {
         self.pipe.lock().replace((pipe_writer, shutdown_manager));
@@ -67,8 +67,8 @@ impl ApiService {
         crate::netlink_task::start_netlink(self).await?;
         Ok(())
     }
-    pub fn current_config(&self) -> anyhow::Result<ConfigView> {
-        Ok(self.config.lock().to_config_view())
+    pub fn current_config(&self) -> anyhow::Result<Option<ConfigView>> {
+        Ok(self.config.lock().clone().map(|c| c.to_config_view()))
     }
     pub fn update_config(&self, config_view: ConfigView) -> anyhow::Result<()> {
         let config = config_view.into_config()?;
