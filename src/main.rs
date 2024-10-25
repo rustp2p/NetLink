@@ -14,6 +14,7 @@ use std::str::FromStr;
 mod cipher;
 mod config;
 mod exit_route;
+
 mod ipc;
 mod netlink_task;
 mod platform;
@@ -86,18 +87,6 @@ enum Commands {
         /// Disable backend cmd/http server
         #[arg(long)]
         api_disable: bool,
-        /// View information about the current program
-        #[arg(long)]
-        info: bool,
-        /// View all nodes in the current group
-        #[arg(long)]
-        nodes: bool,
-        /// View all group codes
-        #[arg(long)]
-        groups: bool,
-        /// View all nodes in the group code
-        #[arg(long)]
-        others: Option<String>,
     },
 }
 
@@ -115,9 +104,6 @@ pub fn main() -> anyhow::Result<()> {
             if e.kind() == ErrorKind::DisplayHelp {
                 println!("{e}");
                 return Ok(());
-            }
-            if let Ok(args) = ArgsBack::try_parse() {
-                return client_cmd(args);
             }
             if let Ok(args) = ArgsConfig::try_parse() {
                 let file_config = FileConfigView::read_file(&args.config)?;
@@ -151,38 +137,6 @@ fn block_on<F: Future>(worker_threads: usize, f: F) -> F::Output {
             .unwrap()
             .block_on(f)
     }
-}
-
-#[tokio::main(flavor = "current_thread")]
-async fn client_cmd(args: ArgsBack) -> anyhow::Result<()> {
-    let Commands::Cmd {
-        api_addr,
-        info,
-        nodes,
-        groups,
-        others,
-        ..
-    } = args.command;
-    if nodes {
-        if let Err(e) = ipc::udp::client::nodes(api_addr).await {
-            Err(anyhow!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}"))?;
-        }
-    } else if groups {
-        if let Err(e) = ipc::udp::client::groups(api_addr).await {
-            Err(anyhow!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}"))?;
-        }
-    } else if let Some(group_code) = others {
-        if let Err(e) = ipc::udp::client::other_nodes(api_addr, group_code).await {
-            Err(anyhow!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}"))?;
-        }
-    } else if info {
-        if let Err(e) = ipc::udp::client::current_info(api_addr).await {
-            Err(anyhow!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}"))?;
-        }
-    } else {
-        Err(anyhow!("Use specific commands to view data"))?;
-    }
-    Ok(())
 }
 
 async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
@@ -269,7 +223,7 @@ async fn start_by_config(
     let api_service = ApiService::new(config);
     if let Some(cmd_server_addr) = cmd_server_addr {
         if let Err(e) = ipc::server_start(cmd_server_addr, api_service.clone()).await {
-            return Err(anyhow!("The backend command port has already been used. Please use '--cmd-port' to change the port, err={e}"));
+            return Err(anyhow!("The backend command port has already been used. Please use 'cmd --api-addr' to change the port, err={e}"));
         }
     }
 
