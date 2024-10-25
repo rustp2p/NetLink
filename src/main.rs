@@ -6,11 +6,10 @@ use anyhow::anyhow;
 
 use clap::error::ErrorKind;
 
+use crate::config::{ConfigView, FileConfigView, PeerAddress};
+use crate::ipc::service::ApiService;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
-
-use crate::config::{ConfigView, FileConfigView};
-use crate::ipc::service::ApiService;
 
 use rustp2p::protocol::node_id::GroupCode;
 
@@ -29,7 +28,7 @@ struct Args {
     /// Peer node address.
     /// e.g.: -p tcp://192.168.10.13:23333 -p udp://192.168.10.23:23333
     #[arg(short, long)]
-    peer: Vec<String>,
+    peer: Vec<PeerAddress>,
     /// Local node IP and prefix.If there is no 'prefix', Will not enable Tun.
     /// e.g.: -l 10.26.0.2/24
     #[arg(short, long, value_name = "LOCAL IP")]
@@ -83,12 +82,12 @@ struct ArgsBack {
 enum Commands {
     /// Backend command
     Cmd {
-        /// Set backend server host. default 127.0.0.1
+        /// Set backend cmd/http server address. default '127.0.0.1:23336'
         #[arg(long)]
-        cmd_host: Option<IpAddr>,
-        ///  Set backend server port. When opening multiple programs, this port needs to be set. default 23336
+        addr: Option<String>,
+        /// Disable backend cmd/http server
         #[arg(long)]
-        cmd_port: Option<u16>,
+        disable: bool,
         /// View information about the current program
         #[arg(long)]
         info: bool,
@@ -106,6 +105,7 @@ enum Commands {
 
 const CMD_HOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 const CMD_PORT: u16 = 23336;
+const CMD_ADDRESS: SocketAddr = SocketAddr::new(CMD_HOST, CMD_PORT);
 const LISTEN_PORT: u16 = 23333;
 
 pub fn main() -> anyhow::Result<()> {
@@ -153,16 +153,14 @@ fn block_on<F: Future>(worker_threads: usize, f: F) -> F::Output {
 #[tokio::main(flavor = "current_thread")]
 async fn client_cmd(args: ArgsBack) -> anyhow::Result<()> {
     let Commands::Cmd {
-        cmd_host,
-        cmd_port,
+        addr,
         info,
         nodes,
         groups,
         others,
+        ..
     } = args.command;
-    let host = cmd_host.unwrap_or(CMD_HOST);
-    let port = cmd_port.unwrap_or(CMD_PORT);
-    let addr = format!("{host}:{port}");
+    let addr = addr.unwrap_or(CMD_ADDRESS.to_string());
     if nodes {
         if let Err(e) = ipc::udp::client::nodes(addr).await {
             Err(anyhow!("Perhaps the backend service has not been started. Use '--cmd-port' to change the port. error={e}"))?;
@@ -220,18 +218,18 @@ async fn main_by_cmd(args: Args) -> anyhow::Result<()> {
         exit_node,
         ..ConfigView::default()
     };
-    let addr = if let Some(Commands::Cmd {
-        cmd_host, cmd_port, ..
-    }) = command
-    {
-        let port = cmd_port.unwrap_or(CMD_PORT);
-        if port == 0 {
+    let addr = if let Some(Commands::Cmd { addr, disable, .. }) = command {
+        if disable {
             None
+        } else if let Some(addr) = addr {
+            let addr = SocketAddr::from_str(&addr)
+                .map_err(|e| anyhow::anyhow!("cmd --addr {addr:?}, {e}"))?;
+            Some(addr)
         } else {
-            Some(SocketAddr::new(cmd_host.unwrap_or(CMD_HOST), port))
+            Some(CMD_ADDRESS)
         }
     } else {
-        Some(SocketAddr::from_str(&format!("{CMD_HOST}:{CMD_PORT}")).unwrap())
+        Some(CMD_ADDRESS)
     };
     start_by_config(config_view, addr).await?;
     Ok(())
@@ -249,7 +247,7 @@ async fn main_by_config_file(file_config: FileConfigView) -> anyhow::Result<()> 
             .unwrap(),
         )
     };
-    let config_view = ConfigView::from(file_config);
+    let config_view = ConfigView::try_from(file_config)?;
     start_by_config(config_view, addr).await
 }
 

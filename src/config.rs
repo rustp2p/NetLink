@@ -1,13 +1,15 @@
+use crate::cipher::Cipher;
+use crate::{CMD_HOST, CMD_PORT, LISTEN_PORT};
 use anyhow::anyhow;
-use std::net::{Ipv4Addr, Ipv6Addr};
-
 use rustp2p::config::LocalInterface;
 use rustp2p::pipe::PeerNodeAddress;
 use rustp2p::protocol::node_id::GroupCode;
-use serde::{Deserialize, Serialize};
-
-use crate::cipher::Cipher;
-use crate::{CMD_HOST, CMD_PORT, LISTEN_PORT};
+use serde::de::Visitor;
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt;
+use std::fmt::{Debug, Display, Formatter};
+use std::net::{Ipv4Addr, Ipv6Addr};
+use std::str::FromStr;
 
 const UDP_STUN: [&str; 6] = [
     "stun.miwifi.com",
@@ -37,7 +39,7 @@ pub struct Config {
     pub algorithm: Option<String>,
     pub port: u16,
     pub group_code: GroupCode,
-    pub peer_addrs: Vec<PeerNodeAddress>,
+    pub peer: Vec<PeerAddress>,
     pub bind_dev_name: Option<String>,
     pub iface_option: Option<LocalInterface>,
     pub exit_node: Option<Ipv4Addr>,
@@ -58,12 +60,59 @@ pub struct ConfigView {
     pub encrypt: Option<String>,
     pub algorithm: Option<String>,
     pub port: u16,
-    pub peer: Vec<String>,
+    pub peer: Vec<PeerAddress>,
     pub bind_dev_name: Option<String>,
     pub exit_node: Option<String>,
 
     pub udp_stun: Vec<String>,
     pub tcp_stun: Vec<String>,
+}
+#[derive(Debug, Clone)]
+pub struct PeerAddress(pub PeerNodeAddress);
+impl Display for PeerAddress {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+impl FromStr for PeerAddress {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(PeerAddress(PeerNodeAddress::from_str(s)?))
+    }
+}
+impl Serialize for PeerAddress {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+impl<'de> Deserialize<'de> for PeerAddress {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct PeerNodeAddressVisitor;
+
+        impl<'de> Visitor<'de> for PeerNodeAddressVisitor {
+            type Value = PeerAddress;
+
+            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+                formatter.write_str("a valid PeerNodeAddress string")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                PeerAddress::from_str(value).map_err(de::Error::custom)
+            }
+        }
+
+        deserializer.deserialize_str(PeerNodeAddressVisitor)
+    }
 }
 
 impl Default for ConfigView {
@@ -130,9 +179,18 @@ impl FileConfigView {
     }
 }
 
-impl From<FileConfigView> for ConfigView {
-    fn from(value: FileConfigView) -> Self {
-        Self {
+impl TryFrom<FileConfigView> for ConfigView {
+    type Error = anyhow::Error;
+
+    fn try_from(value: FileConfigView) -> Result<Self, Self::Error> {
+        let mut peer = Vec::new();
+        for addr in value.peer {
+            peer.push(PeerAddress(
+                addr.parse::<PeerNodeAddress>()
+                    .map_err(|e| anyhow::anyhow!("peer error: {e}"))?,
+            ))
+        }
+        Ok(Self {
             config_name: DEFAULT_CONFIG_NAME.to_string(),
             group_code: value.group_code,
             node_ipv4: value.node_ipv4,
@@ -143,12 +201,12 @@ impl From<FileConfigView> for ConfigView {
             encrypt: value.encrypt,
             algorithm: value.algorithm,
             port: value.port,
-            peer: value.peer,
+            peer,
             bind_dev_name: value.bind_dev_name,
             exit_node: value.exit_node,
             udp_stun: value.udp_stun,
             tcp_stun: value.tcp_stun,
-        }
+        })
     }
 }
 
@@ -189,12 +247,7 @@ impl Config {
             encrypt: self.encrypt.clone(),
             algorithm: self.algorithm.clone(),
             port: self.port,
-            peer: self
-                .peer_addrs
-                .clone()
-                .iter()
-                .map(|v| v.to_string())
-                .collect(),
+            peer: self.peer.clone(),
             bind_dev_name: self.bind_dev_name.clone(),
             exit_node: self.exit_node.map(|v| format!("{v}")),
             udp_stun: self.udp_stun.clone(),
@@ -243,13 +296,6 @@ impl ConfigView {
         } else {
             self.encrypt.map(Cipher::new_chacha20_poly1305)
         };
-        let mut peer_addrs = Vec::new();
-        for addr in self.peer {
-            peer_addrs.push(
-                addr.parse::<PeerNodeAddress>()
-                    .map_err(|e| anyhow::anyhow!("peer error: {e}"))?,
-            )
-        }
 
         let mut iface_option = None;
         if let Some(bind_dev_name) = self.bind_dev_name.clone() {
@@ -288,7 +334,7 @@ impl ConfigView {
             algorithm,
             port: self.port,
             group_code,
-            peer_addrs,
+            peer: self.peer,
             bind_dev_name: self.bind_dev_name,
             iface_option,
             exit_node,

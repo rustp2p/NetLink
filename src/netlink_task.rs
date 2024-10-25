@@ -24,7 +24,7 @@ pub async fn start_netlink(api_service: &ApiService) -> anyhow::Result<()> {
     let mut pipe_config = PipeConfig::empty()
         .set_udp_pipe_config(udp_config)
         .set_tcp_pipe_config(tcp_config)
-        .set_direct_addrs(config.peer_addrs)
+        .set_direct_addrs(config.peer.into_iter().map(|v| v.0).collect())
         .set_group_code(config.group_code)
         .set_node_id(config.node_ipv4.into())
         .set_udp_stun_servers(config.udp_stun)
