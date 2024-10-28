@@ -232,8 +232,12 @@ pub async fn start(addr: SocketAddr, api_service: ApiService) -> anyhow::Result<
         router.push(Router::with_path("update-config").get(UpdateConfig(api_service.clone())));
     let router = router
         .push(Router::with_path("nodes-by-group/<group>").get(NodesByGroup(api_service.clone())));
+
+    let root_router = Router::new();
+    //root_router.push(Router::with_path("/<**path>").get(goal))
+    let root_router = root_router.push(router);
     tokio::spawn(async move {
-        Server::new(acceptor).serve(router).await;
+        Server::new(acceptor).serve(root_router).await;
     });
     Ok(())
 }
