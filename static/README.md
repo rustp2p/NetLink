@@ -1,1 +1,0 @@
-The files in the './static' directory will be packaged into the executable, except for the current README.md file.

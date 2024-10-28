@@ -1,5 +1,6 @@
 use crate::config::ConfigView;
 use crate::ipc::service::ApiService;
+use mime_guess::Mime;
 use salvo::http::Method;
 use salvo::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -29,6 +30,16 @@ impl Handler for Open {
         res: &mut Response,
         _ctrl: &mut FlowCtrl,
     ) {
+        if self.0.load_config().is_none() {
+            res.render(Text::Json(
+                json!({
+                    "code":400,
+                    "data":"没有可用配置进行启动"
+                })
+                .to_string(),
+            ));
+            return;
+        }
         match self.0.open().await {
             Ok(_) => {
                 res.render(Text::Json(
@@ -52,7 +63,7 @@ impl Handler for Open {
     }
 }
 
-struct ApiQueryHandler<R>(ApiService, fn(&ApiService) -> anyhow::Result<R>);
+struct ApiQueryHandler<R>(ApiService, fn(&ApiService) -> anyhow::Result<R>, bool);
 #[async_trait]
 impl<R: 'static + Send + Sync + Serialize> Handler for ApiQueryHandler<R> {
     async fn handle(
@@ -62,15 +73,17 @@ impl<R: 'static + Send + Sync + Serialize> Handler for ApiQueryHandler<R> {
         res: &mut Response,
         _ctrl: &mut FlowCtrl,
     ) {
-        if self.0.is_close() {
-            res.render(Text::Json(
-                json!({
-                    "code":503,
-                    "data":"Not Started"
-                })
-                .to_string(),
-            ));
-            return;
+        if self.2 {
+            if self.0.is_close() {
+                res.render(Text::Json(
+                    json!({
+                        "code":503,
+                        "data":"Not Started"
+                    })
+                    .to_string(),
+                ));
+                return;
+            }
         }
         match (self.1)(&self.0) {
             Ok(rs) => {
@@ -199,88 +212,144 @@ use salvo::cors::{Cors, CorsHandler};
 fn allow_cors() -> CorsHandler {
     Cors::new()
         .allow_origin("*")
-        .allow_methods(vec![Method::GET, Method::POST, Method::DELETE])
+        .allow_methods(vec![
+            Method::GET,
+            Method::POST,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers("*")
         .into_handler()
 }
 
 pub async fn start(addr: SocketAddr, api_service: ApiService) -> anyhow::Result<()> {
     let acceptor = TcpListener::new(addr).bind().await;
     let router = Router::with_path("api").hoop(allow_cors());
-    let router = router.push(Router::with_path("application-info").get(application_info));
-    let router = router.push(Router::with_path("open").get(Open(api_service.clone())));
+    let router = router.push(
+        Router::with_path("application-info")
+            .get(application_info)
+            .options(handler::empty()),
+    );
+    let router = router.push(
+        Router::with_path("open")
+            .get(Open(api_service.clone()))
+            .options(handler::empty()),
+    );
     let router = router.push(
         Router::with_path("close")
-            .get(ApiQueryHandler(api_service.clone(), ApiService::close as _)),
+            .get(ApiQueryHandler(
+                api_service.clone(),
+                ApiService::close as _,
+                true,
+            ))
+            .options(handler::empty()),
     );
-    let router = router.push(Router::with_path("current-config").get(ApiQueryHandler(
-        api_service.clone(),
-        ApiService::current_config as _,
-    )));
-    let router = router.push(Router::with_path("current-info").get(ApiQueryHandler(
-        api_service.clone(),
-        ApiService::current_info as _,
-    )));
-    let router = router.push(Router::with_path("current-nodes").get(ApiQueryHandler(
-        api_service.clone(),
-        ApiService::current_nodes as _,
-    )));
-    let router = router.push(Router::with_path("groups").get(ApiQueryHandler(
-        api_service.clone(),
-        ApiService::groups as _,
-    )));
-    let router =
-        router.push(Router::with_path("update-config").get(UpdateConfig(api_service.clone())));
-    let router = router
-        .push(Router::with_path("nodes-by-group/<group>").get(NodesByGroup(api_service.clone())));
+    let router = router.push(
+        Router::with_path("current-config")
+            .get(ApiQueryHandler(
+                api_service.clone(),
+                ApiService::current_config as _,
+                false,
+            ))
+            .options(handler::empty()),
+    );
+    let router = router.push(
+        Router::with_path("current-info")
+            .get(ApiQueryHandler(
+                api_service.clone(),
+                ApiService::current_info as _,
+                true,
+            ))
+            .options(handler::empty()),
+    );
+    let router = router.push(
+        Router::with_path("current-nodes")
+            .get(ApiQueryHandler(
+                api_service.clone(),
+                ApiService::current_nodes as _,
+                true,
+            ))
+            .options(handler::empty()),
+    );
+    let router = router.push(
+        Router::with_path("groups")
+            .get(ApiQueryHandler(
+                api_service.clone(),
+                ApiService::groups as _,
+                true,
+            ))
+            .options(handler::empty()),
+    );
+    let router = router.push(
+        Router::with_path("update-config")
+            .post(UpdateConfig(api_service.clone()))
+            .options(handler::empty()),
+    );
+    let router = router.push(
+        Router::with_path("nodes-by-group/<group>")
+            .get(NodesByGroup(api_service.clone()))
+            .options(handler::empty()),
+    );
 
     let root_router = Router::new();
-    //root_router.push(Router::with_path("/<**path>").get(goal))
     let root_router = root_router.push(router);
+    let root_router = root_router.push(Router::with_path("<**path>").get(static_file));
     tokio::spawn(async move {
         Server::new(acceptor).serve(root_router).await;
     });
     Ok(())
 }
 
+async fn read_file(path: &str) -> Option<(Vec<u8>, Mime)> {
+    let current_path = Path::new(".").join("static").join(&path);
+    if current_path.exists() {
+        if let Ok(content) = tokio::fs::read(current_path).await {
+            let mime = mime_guess::from_path(&path).first_or_octet_stream();
+            return Some((content, mime));
+        }
+        return None;
+    }
+    if let Some(content) = StaticAssets::get(&path) {
+        let mime = mime_guess::from_path(path).first_or_octet_stream();
+        return Some((content.data.into_owned(), mime));
+    }
+    None
+}
+
+#[handler]
+async fn static_file(req: &mut Request, res: &mut Response) {
+    let mut path = req
+        .param::<String>("path")
+        .unwrap_or("index.html".to_string());
+    if path.is_empty() {
+        path = "index.html".to_string();
+    }
+    match read_file(&path).await {
+        Some((body, mime)) => {
+            _ = res
+                .body(body)
+                .add_header("Content-Type", mime.as_ref(), true);
+        }
+        None => {
+            if path == "index.html" {
+                res.status_code(StatusCode::NOT_FOUND);
+                return;
+            }
+            if let Some((body, mime)) = read_file("index.html").await {
+                _ = res
+                    .body(body)
+                    .add_header("Content-Type", mime.as_ref(), true);
+            } else {
+                res.status_code(StatusCode::NOT_FOUND);
+            }
+        }
+    }
+}
+
 #[derive(rust_embed::Embed)]
 #[folder = "static/"]
 #[exclude = "README.md"]
 struct StaticAssets;
-
-async fn serve_static(path: warp::path::Tail) -> Result<impl warp::Reply, warp::Rejection> {
-    let mut path = path.as_str();
-    if path.is_empty() {
-        path = "index.html"
-    }
-    let mut first = true;
-    loop {
-        // Attempt to read files from the current directory
-        let current_path = Path::new(".").join("static").join(path);
-        if current_path.exists() {
-            if let Ok(content) = tokio::fs::read(current_path).await {
-                let mime = mime_guess::from_path(path).first_or_octet_stream();
-                return Ok(warp::http::Response::builder()
-                    .header("Content-Type", mime.as_ref())
-                    .body(content));
-            }
-        }
-
-        // If the file does not exist in the current directory, try reading from the packaged static file
-        return if let Some(content) = StaticAssets::get(path) {
-            let mime = mime_guess::from_path(path).first_or_octet_stream();
-            Ok(warp::http::Response::builder()
-                .header("Content-Type", mime.as_ref())
-                .body(content.data.into_owned()))
-        } else {
-            if first {
-                first = false;
-                path = "index.html";
-                continue;
-            }
-            Err(warp::reject::not_found())
-        };
-    }
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ApplicationInfo {
