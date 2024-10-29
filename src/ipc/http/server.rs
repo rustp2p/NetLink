@@ -327,7 +327,7 @@ async fn static_file(req: &mut Request, res: &mut Response) {
     match read_file(&path).await {
         Some((body, mime)) => {
             _ = res
-                .body(body)
+                .body(body.into())
                 .add_header("Content-Type", mime.as_ref(), true);
         }
         None => {
@@ -337,7 +337,7 @@ async fn static_file(req: &mut Request, res: &mut Response) {
             }
             if let Some((body, mime)) = read_file("index.html").await {
                 _ = res
-                    .body(body)
+                    .body(body.into())
                     .add_header("Content-Type", mime.as_ref(), true);
             } else {
                 res.status_code(StatusCode::NOT_FOUND);

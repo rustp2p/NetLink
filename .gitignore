@@ -2,4 +2,4 @@ target/
 Cargo.lock
 .idea
 wintun.dll
-static/
+static/*
