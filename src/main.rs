@@ -116,9 +116,9 @@ pub fn main() -> anyhow::Result<()> {
     };
     if let Some(args) = args {
         let worker_threads = args.threads;
-        return block_on(worker_threads, main_by_cmd(Some(args)));
+        block_on(worker_threads, main_by_cmd(Some(args)))
     } else {
-        return block_on(2, main_by_cmd(None));
+        block_on(2, main_by_cmd(None))
     }
 }
 

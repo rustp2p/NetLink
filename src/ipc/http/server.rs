@@ -5,8 +5,7 @@ use salvo::http::Method;
 use salvo::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::net::SocketAddr;
-use std::path::Path;
+use std::{net::SocketAddr, path::PathBuf};
 
 #[handler]
 async fn application_info(res: &mut Response) -> anyhow::Result<()> {
@@ -73,17 +72,15 @@ impl<R: 'static + Send + Sync + Serialize> Handler for ApiQueryHandler<R> {
         res: &mut Response,
         _ctrl: &mut FlowCtrl,
     ) {
-        if self.2 {
-            if self.0.is_close() {
-                res.render(Text::Json(
-                    json!({
-                        "code":503,
-                        "data":"Not Started"
-                    })
-                    .to_string(),
-                ));
-                return;
-            }
+        if self.2 && self.0.is_close() {
+            res.render(Text::Json(
+                json!({
+                    "code":503,
+                    "data":"Not Started"
+                })
+                .to_string(),
+            ));
+            return;
         }
         match (self.1)(&self.0) {
             Ok(rs) => {
@@ -303,15 +300,19 @@ pub async fn start(addr: SocketAddr, api_service: ApiService) -> anyhow::Result<
 }
 
 async fn read_file(path: &str) -> Option<(Vec<u8>, Mime)> {
-    let current_path = Path::new(".").join("static").join(&path);
+    let fall_back = PathBuf::from("./");
+    let exe_in_path = std::env::current_exe()
+        .map(|path| path.parent().unwrap_or(fall_back.as_path()).to_owned())
+        .unwrap_or(fall_back);
+    let current_path = exe_in_path.join("static").join(path);
     if current_path.exists() {
         if let Ok(content) = tokio::fs::read(current_path).await {
-            let mime = mime_guess::from_path(&path).first_or_octet_stream();
+            let mime = mime_guess::from_path(path).first_or_octet_stream();
             return Some((content, mime));
         }
         return None;
     }
-    if let Some(content) = StaticAssets::get(&path) {
+    if let Some(content) = StaticAssets::get(path) {
         let mime = mime_guess::from_path(path).first_or_octet_stream();
         return Some((content.data.into_owned(), mime));
     }
