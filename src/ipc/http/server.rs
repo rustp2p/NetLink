@@ -293,8 +293,10 @@ pub async fn start(addr: SocketAddr, api_service: ApiService) -> anyhow::Result<
 
     let root_router = Router::new();
     let root_router = root_router.push(router);
+    let root_router = root_router.push(Router::new().get(static_file));
     let root_router = root_router.push(Router::with_path("<**path>").get(static_file));
     tokio::spawn(async move {
+        log::info!("http service has served on http://{addr}");
         Server::new(acceptor).serve(root_router).await;
     });
     Ok(())
@@ -318,8 +320,9 @@ async fn read_file(path: &str) -> Option<(Vec<u8>, Mime)> {
 
 #[handler]
 async fn static_file(req: &mut Request, res: &mut Response) {
+    // salvo 0.63 must use "**path" while higher version uses "path" index
     let mut path = req
-        .param::<String>("path")
+        .param::<String>("**path")
         .unwrap_or("index.html".to_string());
     if path.is_empty() {
         path = "index.html".to_string();
