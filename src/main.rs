@@ -214,13 +214,7 @@ async fn start_by_config(
     config_view: Option<ConfigView>,
     cmd_server_addr: Option<SocketAddr>,
 ) -> anyhow::Result<()> {
-    let config = if let Some(c) = config_view {
-        Some(c.into_config()?)
-    } else {
-        None
-    };
-
-    let api_service = ApiService::new(config);
+    let api_service = ApiService::new(config_view).await?;
     if let Some(cmd_server_addr) = cmd_server_addr {
         if let Err(e) = ipc::server_start(cmd_server_addr, api_service.clone()).await {
             return Err(anyhow!("The backend command port has already been used. Please use 'cmd --api-addr' to change the port, err={e}"));

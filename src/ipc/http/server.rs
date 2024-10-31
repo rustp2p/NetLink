@@ -116,7 +116,7 @@ impl Handler for UpdateConfig {
         _ctrl: &mut FlowCtrl,
     ) {
         match req.parse_json::<ConfigView>().await {
-            Ok(config_view) => match self.0.update_config(config_view) {
+            Ok(config_view) => match self.0.update_config(config_view).await {
                 Ok(_) => {
                     res.render(Text::Json(
                         json!({

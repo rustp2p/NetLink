@@ -1,25 +1,50 @@
 use crate::config::{group_code_to_string, Config, ConfigView};
 use crate::ipc::common::{GroupItem, NetworkNatInfo, RouteItem};
+use anyhow::Context;
 use async_shutdown::ShutdownManager;
 use parking_lot::Mutex;
 use rustp2p::pipe::PipeWriter;
 use rustp2p::protocol::node_id::GroupCode;
 use std::net::Ipv4Addr;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 type PipeInfo = Arc<Mutex<Option<(Arc<PipeWriter>, ShutdownManager<()>)>>>;
 #[derive(Clone)]
 pub struct ApiService {
+    path: PathBuf,
     config: Arc<Mutex<Option<Config>>>,
     pipe: PipeInfo,
 }
-
+const CONFIG_FILE: &str = "config.json";
 impl ApiService {
-    pub fn new(config: Option<Config>) -> ApiService {
-        Self {
+    pub async fn new(config_view: Option<ConfigView>) -> anyhow::Result<ApiService> {
+        let fall_back = PathBuf::from("./");
+        let exe_in_path = std::env::current_exe()
+            .map(|path| path.parent().unwrap_or(fall_back.as_path()).to_owned())
+            .unwrap_or(fall_back);
+
+        let config = if let Some(c) = config_view.clone() {
+            Some(c.into_config()?)
+        } else if let Ok(config_view) = Self::load_config_by_file(&exe_in_path).await {
+            Some(config_view.into_config().context("config.json error")?)
+        } else {
+            None
+        };
+
+        let api_service = Self {
+            path: exe_in_path,
             pipe: Default::default(),
             config: Arc::new(Mutex::new(config)),
+        };
+        if let Some(config_view) = config_view {
+            if let Err(e) = api_service.save_config_to_file(config_view).await {
+                log::debug!("{e}");
+            }
         }
+        Ok(api_service)
     }
     pub fn load_config(&self) -> Option<Config> {
         self.config.lock().clone()
@@ -27,16 +52,23 @@ impl ApiService {
     pub fn save_config(&self, config: Config) {
         *self.config.lock() = Some(config);
     }
+    pub async fn save_config_to_file(&self, config: ConfigView) -> anyhow::Result<()> {
+        let json_str = serde_json::to_string(&config)?;
+        let path_buf = self.path.join(CONFIG_FILE);
+        let mut file = File::create(path_buf).await?;
+        file.write_all(json_str.as_bytes()).await?;
+        Ok(())
+    }
+    pub async fn load_config_by_file(path: &Path) -> anyhow::Result<ConfigView> {
+        let path_buf = path.join(CONFIG_FILE);
+        let mut file = File::open(path_buf).await?;
+        let mut rs = String::new();
+        file.read_to_string(&mut rs).await?;
+        let config = serde_json::from_str::<ConfigView>(&rs)?;
+        Ok(config)
+    }
     pub fn set_pipe(&self, pipe_writer: Arc<PipeWriter>, shutdown_manager: ShutdownManager<()>) {
         self.pipe.lock().replace((pipe_writer, shutdown_manager));
-        // if let Some((v1, v2)) = self.pipe.lock().replace((pipe_writer, shutdown_manager)) {
-        //     if let Err(e) = v1.shutdown() {
-        //         log::error!("shutdown failed {e:?}");
-        //     }
-        //     if let Err(e) = v2.trigger_shutdown(()) {
-        //         log::error!("shutdown failed {e:?}");
-        //     }
-        // }
     }
 }
 
@@ -70,9 +102,12 @@ impl ApiService {
     pub fn current_config(&self) -> anyhow::Result<Option<ConfigView>> {
         Ok(self.config.lock().clone().map(|c| c.to_config_view()))
     }
-    pub fn update_config(&self, config_view: ConfigView) -> anyhow::Result<()> {
-        let config = config_view.into_config()?;
+    pub async fn update_config(&self, config_view: ConfigView) -> anyhow::Result<()> {
+        let config = config_view.clone().into_config()?;
         self.save_config(config);
+        if let Err(e) = self.save_config_to_file(config_view).await {
+            log::debug!("save config to file failed {e}");
+        }
         Ok(())
     }
     pub fn current_info(&self) -> anyhow::Result<NetworkNatInfo> {
