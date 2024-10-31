@@ -16,7 +16,7 @@ Commands:
 
 Options:
   -p, --peer <PEER>              远端节点地址(需可直接访问). 如: -p tcp://192.168.10.13:23333 或 -p udp://192.168.10.23:23333
-  -l, --local <LOCAL IP>         设定本地节点地址 CIDR格式. 如: -l 10.26.0.2/24
+  -l, --local <LOCAL IP>         设定本地节点地址 CIDR格式. 如: -l 10.26.0.2/24 不填掩码则不监听虚拟网段，相当于只能当中继节点
   -g, --group-code <GROUP CODE>  节点所在组的名称(最大长度16),只有同一组的节点才能进行数据访问
   -P, --port <PORT>              本地监听地址
   -b, --bind-dev <DEVICE NAME>   指定流量出口网卡名. 如: -b eth0
@@ -47,7 +47,7 @@ Options:
 group_code: String
 ## 虚拟ipv4 必填
 node_ipv4: "10.26.1.2"
-## 网段，默认值24，填0则不监听tun网络
+## 网段，默认值24，填0则不监听tun网络，此时只能当中继节点
 #prefix: 24
 ## 虚拟ipv6,会自动生成
 # node_ipv6: 

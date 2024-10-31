@@ -44,7 +44,7 @@ Options:
 group_code: String
 ## node tun ipv4. cannot be empty
 node_ipv4: "10.26.1.2"
-## node tun network prefix. default is 24
+## node tun network prefix. default is 24.If prefix=0, do not listen to the Tun network, and can only act as a relay node at this time
 #prefix: 24
 ## node tun ipv6. The program will automatically generate node_ipv6
 # node_ipv6: 
