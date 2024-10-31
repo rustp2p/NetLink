@@ -168,16 +168,15 @@ async fn line_recv(mut line: PipeLine, sender: Sender<RecvUserData>) {
             Ok(rs) => rs,
             Err(e) => {
                 if let RecvError::Io(e) = e {
-                    log::warn!("recv_from {e:?}");
+                    log::warn!("recv_from {e:?} {:?}", line.remote_addr());
                 }
-                drop(line);
                 return;
             }
         };
         let handle_rs = match rs {
             Ok(handle_rs) => handle_rs,
             Err(e) => {
-                log::warn!("recv_data_handle {e:?}");
+                log::warn!("recv_data_handle {e:?} {:?}", line.remote_addr());
                 continue;
             }
         };
