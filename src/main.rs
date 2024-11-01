@@ -4,8 +4,6 @@ use std::future::Future;
 
 use anyhow::anyhow;
 
-use clap::error::ErrorKind;
-
 use crate::config::{ConfigView, FileConfigView, PeerAddress};
 use crate::ipc::service::ApiService;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -98,27 +96,23 @@ const DEFAULT_ALGORITHM: &str = "chacha20-poly1305";
 
 pub fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
-    let args = match Args::try_parse() {
-        Ok(arg) => Some(arg),
-        Err(e) => {
-            if e.kind() == ErrorKind::DisplayHelp {
+    if std::env::args().count() == 1 {
+        block_on(2, main_by_cmd(None))
+    } else {
+        let args = match Args::try_parse() {
+            Ok(arg) => arg,
+            Err(e) => {
+                if let Ok(args) = ArgsConfig::try_parse() {
+                    let file_config = FileConfigView::read_file(&args.config)?;
+                    let worker_threads = file_config.threads;
+                    return block_on(worker_threads, main_by_config_file(file_config));
+                }
                 println!("{e}");
                 return Ok(());
             }
-            if let Ok(args) = ArgsConfig::try_parse() {
-                let file_config = FileConfigView::read_file(&args.config)?;
-                let worker_threads = file_config.threads;
-                return block_on(worker_threads, main_by_config_file(file_config));
-            }
-
-            None
-        }
-    };
-    if let Some(args) = args {
+        };
         let worker_threads = args.threads;
         block_on(worker_threads, main_by_cmd(Some(args)))
-    } else {
-        block_on(2, main_by_cmd(None))
     }
 }
 
