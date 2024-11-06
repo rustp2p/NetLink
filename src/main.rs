@@ -75,6 +75,14 @@ struct ArgsBack {
     command: Commands,
 }
 
+#[derive(Parser, Debug)]
+struct ArgsApiConfig {
+    #[arg(long, default_value = CMD_ADDRESS_STR)]
+    api_addr: String,
+    #[arg(long, default_value = "2")]
+    threads: usize,
+}
+
 #[derive(clap::Subcommand, Debug)]
 enum Commands {
     /// Backend command
@@ -106,6 +114,12 @@ pub fn main() -> anyhow::Result<()> {
                     let file_config = FileConfigView::read_file(&args.config)?;
                     let worker_threads = file_config.threads;
                     return block_on(worker_threads, main_by_config_file(file_config));
+                }
+                if let Ok(args) = ArgsApiConfig::try_parse() {
+                    return block_on(
+                        args.threads,
+                        start_by_config(None, Some(SocketAddr::from_str(&args.api_addr)?)),
+                    );
                 }
                 println!("{e}");
                 return Ok(());

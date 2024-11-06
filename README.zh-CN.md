@@ -8,6 +8,8 @@
 ## 使用
 
 ```
+管理员权限直接运行: ./netLink.exe 
+管理员权限设置http服务运行: ./netLink.exe --api_addr 192.168.0.1:8080
 管理员权限命令行输入: netLink.exe [OPTIONS] --local <LOCAL IP> --group-code <GROUP CODE>
 
 Commands:

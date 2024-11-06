@@ -6,6 +6,8 @@
 NetLink is a decentralized networking tool built on the [rustp2p](https://crates.io/crates/rustp2p) library.
 
 ```
+Usage: ./netLink.exe 
+Usage: ./netLink.exe --api_addr 192.168.0.1:8080
 Usage: netLink.exe [OPTIONS] --local <LOCAL IP> --group-code <GROUP CODE>
 
 Commands:
@@ -25,6 +27,7 @@ Options:
       --tun-name <TUN_NAME>      Set tun name
   -f, --config <CONFIG>          Start using configuration file
  ```
+
 
 ## Start with config file
 
