@@ -59,8 +59,12 @@ struct Args {
     /// Start using configuration file
     #[arg(short = 'f', long)]
     config: Option<String>,
-    #[command(subcommand)]
-    command: Option<Commands>,
+    /// Set backend cmd/http server address
+    #[arg(long, default_value = CMD_ADDRESS_STR)]
+    api_addr: Option<String>,
+    /// Disable backend cmd/http server
+    #[arg(long)]
+    api_disable: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -70,30 +74,11 @@ struct ArgsConfig {
 }
 
 #[derive(Parser, Debug)]
-struct ArgsBack {
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Parser, Debug)]
 struct ArgsApiConfig {
     #[arg(long, default_value = CMD_ADDRESS_STR)]
     api_addr: String,
     #[arg(long, default_value = "2")]
     threads: usize,
-}
-
-#[derive(clap::Subcommand, Debug)]
-enum Commands {
-    /// Backend command
-    Cmd {
-        /// Set backend cmd/http server address
-        #[arg(long, default_value = CMD_ADDRESS_STR)]
-        api_addr: String,
-        /// Disable backend cmd/http server
-        #[arg(long)]
-        api_disable: bool,
-    },
 }
 
 const CMD_ADDRESS: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 23336);
@@ -160,7 +145,8 @@ async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
             algorithm,
             exit_node,
             tun_name,
-            command,
+            api_addr,
+            api_disable,
             ..
         } = args;
         let mut split = local.split('/');
@@ -185,19 +171,12 @@ async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
             exit_node,
             ..ConfigView::default()
         };
-        let api_addr = if let Some(Commands::Cmd {
-            api_addr,
-            api_disable,
-            ..
-        }) = command
-        {
-            if api_disable {
-                None
-            } else {
-                let addr = SocketAddr::from_str(&api_addr)
-                    .map_err(|e| anyhow::anyhow!("cmd --addr {api_addr:?}, {e}"))?;
-                Some(addr)
-            }
+        let api_addr = if api_disable {
+            None
+        } else if let Some(api_addr) = api_addr {
+            let addr = SocketAddr::from_str(&api_addr)
+                .map_err(|e| anyhow::anyhow!("cmd --addr {api_addr:?}, {e}"))?;
+            Some(addr)
         } else {
             Some(CMD_ADDRESS)
         };
