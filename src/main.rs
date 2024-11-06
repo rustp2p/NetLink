@@ -115,6 +115,7 @@ pub fn main() -> anyhow::Result<()> {
                     let worker_threads = file_config.threads;
                     return block_on(worker_threads, main_by_config_file(file_config));
                 }
+
                 if let Ok(args) = ArgsApiConfig::try_parse() {
                     return block_on(
                         args.threads,
