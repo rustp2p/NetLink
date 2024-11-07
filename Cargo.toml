@@ -12,20 +12,20 @@ rustp2p = { version = "0.1", features = ["chacha20-poly1305", "aes-gcm"] }
 #rustp2p = { git = "https://github.com/rustp2p/rustp2p.git", features = ["chacha20-poly1305", "aes-gcm"] }
 
 clap = { version = "=4.0.32", features = ["derive"] }
-log = "0.4.22"
-env_logger = "0.11.5"
+log = "0.4"
+env_logger = "0.11"
 tun-rs = { version = "1", features = ["async"] }
-pnet_packet = "0.35.0"
+pnet_packet = "0.35"
 ctrlc2 = { version = "3", features = ["tokio", "termination"] }
-tokio = { version = "1.39.2", features = ["full"] }
-crossbeam-queue = "0.3.11"
-bytes = { version = "1.7.2" }
-net-route = "0.4.4"
-futures = "0.3.31"
+tokio = { version = "1.41", features = ["full"] }
+crossbeam-queue = "0.3"
+bytes = { version = "1.8" }
+net-route = "0.4"
+futures = "0.3"
 parking_lot = "0.12"
-libc = "0.2.159"
-anyhow = "1.0.89"
-
+libc = "0.2"
+anyhow = "1"
+tachyonix = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 

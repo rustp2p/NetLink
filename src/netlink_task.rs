@@ -15,7 +15,7 @@ use crate::{
     ipc::service::ApiService,
     route_listen::{self, ExternalRoute},
 };
-use tokio::sync::mpsc::Sender;
+use tachyonix::{channel, Sender};
 
 pub async fn start_netlink(api_service: &ApiService) -> anyhow::Result<()> {
     let shutdown_manager = ShutdownManager::<()>::new();
@@ -54,7 +54,7 @@ async fn start_netlink0(
     let mut pipe = Pipe::new(pipe_config).boxed().await?;
     let writer = Arc::new(pipe.writer());
 
-    let (sender, mut receiver) = tokio::sync::mpsc::channel::<RecvUserData>(256);
+    let (sender, mut receiver) = channel::<RecvUserData>(256);
     if config.prefix > 0 {
         let mut dev_config = tun_rs::Configuration::default();
         dev_config
@@ -118,7 +118,7 @@ async fn start_netlink0(
         }));
         let cipher = config.cipher.clone();
         tokio::spawn(shutdown_manager.wrap_cancel(async move {
-            while let Some(mut buf) = receiver.recv().await {
+            while let Ok(mut buf) = receiver.recv().await {
                 if let Some(cipher) = cipher.as_ref() {
                     match cipher.decrypt(gen_salt(&buf.src_id(), &buf.dest_id()), buf.payload_mut())
                     {
