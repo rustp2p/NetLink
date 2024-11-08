@@ -6,7 +6,7 @@ use netlink_core::api::entity::{GroupItem, NetworkNatInfo, RouteItem};
 use netlink_core::api::NetLinkCoreApi;
 use netlink_core::config::Config;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ApiService {
     lock: Arc<tokio::sync::Mutex<()>>,
     config: Arc<Mutex<Option<(Config, usize)>>>,
@@ -15,11 +15,7 @@ pub struct ApiService {
 
 impl ApiService {
     pub fn new() -> Self {
-        Self {
-            lock: Arc::new(Default::default()),
-            config: Arc::new(Default::default()),
-            api: Arc::new(Default::default()),
-        }
+        Default::default()
     }
     pub fn load_config(&self) -> Option<Config> {
         self.api

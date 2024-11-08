@@ -10,7 +10,7 @@ use serde::de::Visitor;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::cipher::Cipher;
-
+const DEFAULT_ALGORITHM: &str = "chacha20-poly1305";
 const UDP_STUN: [&str; 6] = [
     "stun.miwifi.com",
     "stun.chat.bilibili.com",
@@ -28,6 +28,7 @@ const TCP_STUN: [&str; 3] = [
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Config {
     pub(crate) listen_route: bool,
+    pub(crate) config_name: Option<String>,
     pub(crate) node_ipv4: Ipv4Addr,
     pub(crate) node_ipv6: Ipv6Addr,
     pub(crate) prefix: u8,
@@ -53,6 +54,7 @@ pub struct Config {
 #[derive(Default)]
 pub struct ConfigBuilder {
     listen_route: Option<bool>,
+    config_name: Option<String>,
     node_ipv4: Option<Ipv4Addr>,
     node_ipv6: Option<Ipv6Addr>,
     prefix: Option<u8>,
@@ -77,13 +79,17 @@ impl ConfigBuilder {
         self.listen_route = Some(listen_route);
         self
     }
+    pub fn config_name(mut self, config_name: String) -> Self {
+        self.config_name = Some(config_name);
+        self
+    }
     pub fn node_ipv4(mut self, node_ipv4: Ipv4Addr) -> Self {
         self.node_ipv4 = Some(node_ipv4);
         self
     }
 
-    pub fn node_ipv6(mut self, node_ipv6: Option<Ipv6Addr>) -> Self {
-        self.node_ipv6 = node_ipv6;
+    pub fn node_ipv6(mut self, node_ipv6: Ipv6Addr) -> Self {
+        self.node_ipv6 = Some(node_ipv6);
         self
     }
 
@@ -168,7 +174,10 @@ impl ConfigBuilder {
         };
 
         let encrypt = self.encrypt.clone();
-        let algorithm = self.algorithm.clone().unwrap_or("xor".to_string());
+        let algorithm = self
+            .algorithm
+            .clone()
+            .unwrap_or(DEFAULT_ALGORITHM.to_string());
         let cipher = match algorithm.to_lowercase().as_str() {
             "aes-gcm" => encrypt.map(Cipher::new_aes_gcm),
             "chacha20-poly1305" => encrypt.map(Cipher::new_chacha20_poly1305),
@@ -195,6 +204,7 @@ impl ConfigBuilder {
 
         let config = Config {
             listen_route: self.listen_route.unwrap_or(true),
+            config_name: self.config_name,
             node_ipv4,
             node_ipv6,
             prefix: self.prefix.context("prefix is required")?,
