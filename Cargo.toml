@@ -20,7 +20,6 @@ ctrlc2 = { version = "3", features = ["tokio", "termination"] }
 tokio = { version = "1.41", features = ["full"] }
 crossbeam-queue = "0.3"
 bytes = { version = "1.8" }
-net-route = "0.4"
 futures = "0.3"
 parking_lot = "0.12"
 libc = "0.2"
@@ -29,13 +28,16 @@ tachyonix = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-salvo ={ version = "0.63.1",optional = true,  features=["cors","anyhow"] }
+salvo = { version = "0.63.1", optional = true, features = ["cors", "anyhow"] }
 #warp = { version = "0.3.7", optional = true }
 
 async-shutdown = "0.2"
 serde_yaml = "0.9"
 rust-embed = { version = "8.5", features = ["compression", "include-exclude"], optional = true }
 mime_guess = { version = "2.0", optional = true }
+
+[target.'cfg(any(target_os = "linux", target_os = "macos",target_os = "windows"))'.dependencies]
+net-route = "0.4"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.59" }

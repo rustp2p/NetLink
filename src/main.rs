@@ -11,12 +11,12 @@ use std::str::FromStr;
 
 mod cipher;
 mod config;
-mod exit_route;
 
 mod ipc;
 mod netlink_task;
 mod platform;
-mod route_listen;
+mod route;
+
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Parser, Debug)]

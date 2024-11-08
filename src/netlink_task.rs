@@ -10,11 +10,10 @@ use rustp2p::{
 use tun_rs::{AbstractDevice, AsyncDevice};
 
 use crate::config::Config;
-use crate::{
-    cipher, exit_route,
-    ipc::service::ApiService,
-    route_listen::{self, ExternalRoute},
-};
+use crate::route::ExternalRoute;
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+use crate::route::{exit_route, route_listen};
+use crate::{cipher, ipc::service::ApiService};
 use tachyonix::{channel, Sender};
 
 pub async fn start_netlink(api_service: &ApiService) -> anyhow::Result<()> {
@@ -86,14 +85,17 @@ async fn start_netlink0(
                 log::info!("mapped ipv6 addr={v6}");
             }
         }
-
         let external_route = ExternalRoute::new(config.node_ipv4, config.prefix);
 
-        route_listen::route_listen(shutdown_manager.clone(), if_index, external_route.clone())
-            .await?;
-        if let Some(exit_node) = config.exit_node {
-            exit_route::exit_route(exit_node, if_index).await?;
+        #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+        {
+            route_listen::route_listen(shutdown_manager.clone(), if_index, external_route.clone())
+                .await?;
+            if let Some(exit_node) = config.exit_node {
+                exit_route::exit_route(exit_node, if_index).await?;
+            }
         }
+
         #[cfg(target_os = "macos")]
         {
             use tun_rs::AbstractDevice;
@@ -190,6 +192,7 @@ async fn tun_recv(
     pipe_writer: Arc<PipeWriter>,
     device: Arc<AsyncDevice>,
     self_ip: Ipv4Addr,
+
     external_route: ExternalRoute,
     cipher: Option<cipher::Cipher>,
 ) -> anyhow::Result<()> {
