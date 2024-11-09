@@ -9,6 +9,8 @@ edition = "2021"
 anyhow = "1"
 serde = { version = "1.0", features = ["derive"] }
 rustp2p = { version = "0.1", features = ["chacha20-poly1305", "aes-gcm"] }
+#rustp2p = { git = "https://github.com/rustp2p/rustp2p.git", features = ["chacha20-poly1305", "aes-gcm"] }
+
 libc = "0.2"
 parking_lot = "0.12"
 async-shutdown = "0.2"

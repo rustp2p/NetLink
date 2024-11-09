@@ -10,6 +10,7 @@ use serde::de::Visitor;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::cipher::Cipher;
+
 const DEFAULT_ALGORITHM: &str = "chacha20-poly1305";
 const UDP_STUN: [&str; 6] = [
     "stun.miwifi.com",
@@ -51,6 +52,7 @@ pub struct Config {
     pub(crate) udp_stun: Vec<String>,
     pub(crate) tcp_stun: Vec<String>,
 }
+
 #[derive(Default)]
 pub struct ConfigBuilder {
     listen_route: Option<bool>,
@@ -113,8 +115,8 @@ impl ConfigBuilder {
         self
     }
 
-    pub fn algorithm(mut self, algorithm: String) -> Self {
-        self.algorithm = Some(algorithm);
+    pub fn algorithm(mut self, algorithm: Option<String>) -> Self {
+        self.algorithm = algorithm;
         self
     }
 
@@ -128,8 +130,8 @@ impl ConfigBuilder {
         self
     }
 
-    pub fn peer(mut self, peer: Vec<PeerAddress>) -> Self {
-        self.peer = Some(peer);
+    pub fn peer(mut self, peer: Option<Vec<PeerAddress>>) -> Self {
+        self.peer = peer;
         self
     }
 
@@ -232,11 +234,21 @@ impl ConfigBuilder {
 
 #[derive(Debug, Clone)]
 pub struct GroupCode(pub rustp2p::protocol::node_id::GroupCode);
+
 impl Display for GroupCode {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         std::fmt::Display::fmt(&group_code_to_string(&self.0), f)
     }
 }
+
+impl TryFrom<String> for GroupCode {
+    type Error = anyhow::Error;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        GroupCode::from_str(&value)
+    }
+}
+
 impl FromStr for GroupCode {
     type Err = anyhow::Error;
 
@@ -244,6 +256,7 @@ impl FromStr for GroupCode {
         Ok(GroupCode(string_to_group_code(s)?))
     }
 }
+
 impl Serialize for GroupCode {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -252,6 +265,7 @@ impl Serialize for GroupCode {
         serializer.serialize_str(&self.to_string())
     }
 }
+
 impl<'de> Deserialize<'de> for GroupCode {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -280,11 +294,13 @@ impl<'de> Deserialize<'de> for GroupCode {
 
 #[derive(Debug, Clone)]
 pub struct PeerAddress(pub PeerNodeAddress);
+
 impl Display for PeerAddress {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         std::fmt::Display::fmt(&self.0, f)
     }
 }
+
 impl FromStr for PeerAddress {
     type Err = anyhow::Error;
 
@@ -292,6 +308,7 @@ impl FromStr for PeerAddress {
         Ok(PeerAddress(PeerNodeAddress::from_str(s)?))
     }
 }
+
 impl Serialize for PeerAddress {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -300,6 +317,7 @@ impl Serialize for PeerAddress {
         serializer.serialize_str(&self.to_string())
     }
 }
+
 impl<'de> Deserialize<'de> for PeerAddress {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

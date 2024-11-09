@@ -10,7 +10,6 @@ edition = "2021"
 netlink_core = { path = "../netlink_core" }
 salvo = { version = "0.63.1", features = ["cors", "anyhow"] }
 serde_yaml = "0.9"
-rust-embed = { version = "8.5", features = ["compression", "include-exclude"] }
 mime_guess = { version = "2.0" }
 parking_lot = "0.12"
 anyhow = "1"

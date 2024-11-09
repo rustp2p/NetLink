@@ -1,4 +1,3 @@
-use mime_guess::Mime;
 use salvo::http::Method;
 use salvo::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -114,7 +113,7 @@ impl Handler for UpdateConfig {
         _ctrl: &mut FlowCtrl,
     ) {
         match req.parse_json::<Config>().await {
-            Ok(config_view) => match self.0.update_config(config_view).await {
+            Ok(config_view) => match self.0.update_config(config_view) {
                 Ok(_) => {
                     res.render(Text::Json(
                         json!({
@@ -219,8 +218,15 @@ fn allow_cors() -> CorsHandler {
         .allow_headers("*")
         .into_handler()
 }
+pub async fn start_api(addr: SocketAddr, api_service: ApiService) -> anyhow::Result<()> {
+    start(addr, api_service, DefaultStaticFileAssets).await
+}
 
-pub async fn start(addr: SocketAddr, api_service: ApiService) -> anyhow::Result<()> {
+pub async fn start<A: StaticFileAssets>(
+    addr: SocketAddr,
+    api_service: ApiService,
+    static_assets: A,
+) -> anyhow::Result<()> {
     let acceptor = TcpListener::new(addr).bind().await;
     let router = Router::with_path("api").hoop(allow_cors());
     let router = router.push(
@@ -291,8 +297,9 @@ pub async fn start(addr: SocketAddr, api_service: ApiService) -> anyhow::Result<
 
     let root_router = Router::new();
     let root_router = root_router.push(router);
-    let root_router = root_router.push(Router::new().get(static_file));
-    let root_router = root_router.push(Router::with_path("<**path>").get(static_file));
+    let root_router = root_router.push(Router::new().get(StaticFileHandler(static_assets.clone())));
+    let root_router = root_router
+        .push(Router::with_path("<**path>").get(StaticFileHandler(static_assets.clone())));
     tokio::spawn(async move {
         log::info!("http service has served on http://{addr}");
         Server::new(acceptor).serve(root_router).await;
@@ -300,7 +307,7 @@ pub async fn start(addr: SocketAddr, api_service: ApiService) -> anyhow::Result<
     Ok(())
 }
 
-async fn read_file(path: &str) -> Option<(Vec<u8>, Mime)> {
+async fn read_file<A: StaticFileAssets>(file_assets: &A, path: &str) -> Option<(Vec<u8>, String)> {
     let fall_back = PathBuf::from("./");
     let exe_in_path = std::env::current_exe()
         .map(|path| path.parent().unwrap_or(fall_back.as_path()).to_owned())
@@ -309,52 +316,61 @@ async fn read_file(path: &str) -> Option<(Vec<u8>, Mime)> {
     if current_path.exists() {
         if let Ok(content) = tokio::fs::read(current_path).await {
             let mime = mime_guess::from_path(path).first_or_octet_stream();
-            return Some((content, mime));
+            return Some((content, mime.as_ref().to_string()));
         }
         return None;
     }
-    if let Some(content) = StaticAssets::get(path) {
-        let mime = mime_guess::from_path(path).first_or_octet_stream();
-        return Some((content.data.into_owned(), mime));
+    if let Some((content, mime)) = file_assets.get_file(path) {
+        return Some((content, mime));
     }
     None
 }
-
-#[handler]
-async fn static_file(req: &mut Request, res: &mut Response) {
-    // salvo 0.63 must use "**path" while higher version uses "path" index
-    let mut path = req
-        .param::<String>("**path")
-        .unwrap_or("index.html".to_string());
-    if path.is_empty() {
-        path = "index.html".to_string();
+pub trait StaticFileAssets: Clone + Send + Sync + 'static {
+    /// return file data,file mime
+    fn get_file(&self, path: &str) -> Option<(Vec<u8>, String)>;
+}
+#[derive(Copy, Clone)]
+struct DefaultStaticFileAssets;
+impl StaticFileAssets for DefaultStaticFileAssets {
+    fn get_file(&self, _path: &str) -> Option<(Vec<u8>, String)> {
+        None
     }
-    match read_file(&path).await {
-        Some((body, mime)) => {
-            _ = res
-                .body(body.into())
-                .add_header("Content-Type", mime.as_ref(), true);
+}
+struct StaticFileHandler<A: StaticFileAssets>(A);
+#[async_trait]
+impl<A: StaticFileAssets> Handler for StaticFileHandler<A> {
+    async fn handle(
+        &self,
+        req: &mut Request,
+        _depot: &mut Depot,
+        res: &mut Response,
+        _ctrl: &mut FlowCtrl,
+    ) {
+        // salvo 0.63 must use "**path" while higher version uses "path" index
+        let mut path = req
+            .param::<String>("**path")
+            .unwrap_or("index.html".to_string());
+        if path.is_empty() {
+            path = "index.html".to_string();
         }
-        None => {
-            if path == "index.html" {
-                res.status_code(StatusCode::NOT_FOUND);
-                return;
+        match read_file(&self.0, &path).await {
+            Some((body, mime)) => {
+                _ = res.body(body.into()).add_header("Content-Type", mime, true);
             }
-            if let Some((body, mime)) = read_file("index.html").await {
-                _ = res
-                    .body(body.into())
-                    .add_header("Content-Type", mime.as_ref(), true);
-            } else {
-                res.status_code(StatusCode::NOT_FOUND);
+            None => {
+                if path == "index.html" {
+                    res.status_code(StatusCode::NOT_FOUND);
+                    return;
+                }
+                if let Some((body, mime)) = read_file(&self.0, "index.html").await {
+                    _ = res.body(body.into()).add_header("Content-Type", mime, true);
+                } else {
+                    res.status_code(StatusCode::NOT_FOUND);
+                }
             }
         }
     }
 }
-
-#[derive(rust_embed::Embed)]
-#[folder = "static/"]
-#[exclude = "README.md"]
-struct StaticAssets;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ApplicationInfo {

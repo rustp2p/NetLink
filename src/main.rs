@@ -4,18 +4,16 @@ use std::future::Future;
 
 use anyhow::anyhow;
 
-use crate::config::{ConfigView, FileConfigView, PeerAddress};
-use crate::ipc::service::ApiService;
+use crate::config::FileConfigView;
+use crate::service::ApiService;
+use crate::static_file::StaticAssets;
+use netlink_http::{Config, ConfigBuilder, PeerAddress};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 
-mod cipher;
 mod config;
-
-mod ipc;
-mod netlink_task;
-mod platform;
-mod route;
+mod service;
+mod static_file;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -52,7 +50,7 @@ struct Args {
     algorithm: String,
     /// Global exit node,please use it together with '--bind-dev'
     #[arg(long)]
-    exit_node: Option<String>,
+    exit_node: Option<Ipv4Addr>,
     /// Set tun name
     #[arg(long)]
     tun_name: Option<String>,
@@ -157,20 +155,19 @@ async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
         } else {
             0
         };
-        let config_view = ConfigView {
-            group_code,
-            node_ipv4: format!("{self_id}"),
-            prefix,
-            node_ipv6: None,
-            tun_name,
-            encrypt,
-            algorithm,
-            port,
-            peer,
-            bind_dev_name: bind_dev,
-            exit_node,
-            ..ConfigView::default()
-        };
+        let config = ConfigBuilder::new()
+            .group_code(group_code.try_into()?)
+            .config_name("cmd".to_string())
+            .node_ipv4(self_id)
+            .prefix(prefix)
+            .tun_name(tun_name)
+            .encrypt(encrypt)
+            .algorithm(Some(algorithm))
+            .port(port)
+            .peer(Some(peer))
+            .bind_dev_name(bind_dev)
+            .exit_node(exit_node)
+            .build()?;
         let api_addr = if api_disable {
             None
         } else if let Some(api_addr) = api_addr {
@@ -180,7 +177,7 @@ async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
         } else {
             Some(CMD_ADDRESS)
         };
-        start_by_config(Some(config_view), api_addr).await?;
+        start_by_config(Some(config), api_addr).await?;
     } else {
         start_by_config(None, Some(SocketAddr::from_str(CMD_ADDRESS_STR).unwrap())).await?;
     }
@@ -194,17 +191,20 @@ async fn main_by_config_file(file_config: FileConfigView) -> anyhow::Result<()> 
     } else {
         Some(file_config.api_addr)
     };
-    let config_view = ConfigView::try_from(file_config)?;
-    start_by_config(Some(config_view), addr).await
+    let config = file_config.try_into()?;
+    start_by_config(Some(config), addr).await
 }
 
 async fn start_by_config(
-    config_view: Option<ConfigView>,
+    config: Option<Config>,
     cmd_server_addr: Option<SocketAddr>,
 ) -> anyhow::Result<()> {
-    let api_service = ApiService::new(config_view).await?;
+    let api_service = ApiService::new(config).await?;
     if let Some(cmd_server_addr) = cmd_server_addr {
-        if let Err(e) = ipc::server_start(cmd_server_addr, api_service.clone()).await {
+        if let Err(e) =
+            netlink_http::web_server::start(cmd_server_addr, api_service.inner_api(), StaticAssets)
+                .await
+        {
             return Err(anyhow!("The backend command port has already been used. Please use 'cmd --api-addr' to change the port, err={e}"));
         }
     }
@@ -215,8 +215,9 @@ async fn start_by_config(
         let _ = tx.send(()).await;
     })
     .await;
-
-    netlink_task::start_netlink(&api_service).await?;
+    if api_service.exist_config() {
+        api_service.open().await?;
+    }
     _ = quit.recv().await;
     _ = api_service.close();
     log::info!("exit!!!!");

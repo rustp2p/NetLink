@@ -17,13 +17,13 @@ impl ApiService {
     pub fn new() -> Self {
         Default::default()
     }
-    pub fn load_config(&self) -> Option<Config> {
-        self.api
-            .lock()
-            .as_ref()
-            .map(|(v, _)| v.current_config().clone())
+    pub fn exist_config(&self) -> bool {
+        self.config.lock().is_some()
     }
-    pub async fn update_config(&self, config_view: Config) -> anyhow::Result<()> {
+    pub fn load_config(&self) -> Option<Config> {
+        self.config.lock().as_ref().map(|(v, _)| v.clone())
+    }
+    pub fn update_config(&self, config_view: Config) -> anyhow::Result<()> {
         let mut guard = self.config.lock();
         if let Some((config, epoch)) = guard.as_mut() {
             *config = config_view;
