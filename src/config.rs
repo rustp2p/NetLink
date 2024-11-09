@@ -5,23 +5,9 @@ use std::str::FromStr;
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 
-use netlink_http::{Config, ConfigBuilder, PeerAddress};
+use netlink_http::{default_tcp_stun, default_udp_stun, Config, ConfigBuilder, PeerAddress};
 
 use crate::{CMD_ADDRESS, DEFAULT_ALGORITHM, LISTEN_PORT};
-
-const UDP_STUN: [&str; 6] = [
-    "stun.miwifi.com",
-    "stun.chat.bilibili.com",
-    "stun.hitv.com",
-    "stun.l.google.com:19302",
-    "stun1.l.google.com:19302",
-    "stun2.l.google.com:19302",
-];
-const TCP_STUN: [&str; 3] = [
-    "stun.flashdance.cx",
-    "stun.sipnet.net",
-    "stun.nextcloud.com:443",
-];
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
@@ -123,8 +109,8 @@ impl Default for FileConfigView {
             peer: None,
             bind_dev_name: None,
             exit_node: None,
-            udp_stun: UDP_STUN.iter().map(|v| v.to_string()).collect(),
-            tcp_stun: TCP_STUN.iter().map(|v| v.to_string()).collect(),
+            udp_stun: default_udp_stun(),
+            tcp_stun: default_tcp_stun(),
         }
     }
 }

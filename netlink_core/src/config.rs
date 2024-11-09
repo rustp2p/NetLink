@@ -26,6 +26,16 @@ const TCP_STUN: [&str; 3] = [
     "stun.nextcloud.com:443",
 ];
 
+pub fn default_algorithm() -> String {
+    DEFAULT_ALGORITHM.to_string()
+}
+pub fn default_udp_stun() -> Vec<String> {
+    UDP_STUN.iter().map(|v| v.to_string()).collect()
+}
+pub fn default_tcp_stun() -> Vec<String> {
+    TCP_STUN.iter().map(|v| v.to_string()).collect()
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Config {
     pub(crate) listen_route: bool,
@@ -176,10 +186,7 @@ impl ConfigBuilder {
         };
 
         let encrypt = self.encrypt.clone();
-        let algorithm = self
-            .algorithm
-            .clone()
-            .unwrap_or(DEFAULT_ALGORITHM.to_string());
+        let algorithm = self.algorithm.clone().unwrap_or(default_algorithm());
         let cipher = match algorithm.to_lowercase().as_str() {
             "aes-gcm" => encrypt.map(Cipher::new_aes_gcm),
             "chacha20-poly1305" => encrypt.map(Cipher::new_chacha20_poly1305),
@@ -221,12 +228,8 @@ impl ConfigBuilder {
             bind_dev_name: self.bind_dev_name,
             iface_option,
             exit_node: self.exit_node,
-            udp_stun: self
-                .udp_stun
-                .unwrap_or(UDP_STUN.iter().map(|v| v.to_string()).collect()),
-            tcp_stun: self
-                .tcp_stun
-                .unwrap_or(TCP_STUN.iter().map(|v| v.to_string()).collect()),
+            udp_stun: self.udp_stun.unwrap_or(default_udp_stun()),
+            tcp_stun: self.tcp_stun.unwrap_or(default_tcp_stun()),
         };
         Ok(config)
     }
