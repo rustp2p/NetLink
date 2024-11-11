@@ -157,7 +157,7 @@ async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
         };
         let config = ConfigBuilder::new()
             .group_code(group_code.try_into()?)
-            .config_name("cmd".to_string())
+            .config_name(Some("cmd".to_string()))
             .node_ipv4(self_id)
             .prefix(prefix)
             .tun_name(tun_name)

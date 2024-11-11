@@ -91,8 +91,8 @@ impl ConfigBuilder {
         self.listen_route = Some(listen_route);
         self
     }
-    pub fn config_name(mut self, config_name: String) -> Self {
-        self.config_name = Some(config_name);
+    pub fn config_name(mut self, config_name: Option<String>) -> Self {
+        self.config_name = config_name;
         self
     }
     pub fn node_ipv4(mut self, node_ipv4: Ipv4Addr) -> Self {

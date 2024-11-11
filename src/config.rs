@@ -75,7 +75,7 @@ impl TryFrom<FileConfigView> for Config {
             .port(value.port)
             .algorithm(Some(value.algorithm))
             .encrypt(value.encrypt)
-            .config_name("file_config".to_string())
+            .config_name(Some("file_config".to_string()))
             .tun_name(value.tun_name)
             .bind_dev_name(value.bind_dev_name)
             .peer(peer);
