@@ -8,20 +8,42 @@ use rustp2p::pipe::PipeWriter;
 use crate::api::entity::{GroupItem, NetworkNatInfo, RouteItem};
 use crate::config::{Config, GroupCode};
 use crate::netlink_task::start_netlink;
+use crate::route::ExternalRoute;
 
 pub struct NetLinkCoreApi {
     config: Config,
     pipe: Arc<PipeWriter>,
     shutdown_manager: ShutdownManager<()>,
+    external_route: Option<ExternalRoute>,
 }
 
 impl NetLinkCoreApi {
     pub async fn open(config: Config) -> anyhow::Result<Self> {
-        let (pipe, shutdown_manager) = start_netlink(config.clone()).await?;
+        let (pipe, external_route, shutdown_manager) = start_netlink(
+            config.clone(),
+            #[cfg(unix)]
+            None,
+        )
+        .await?;
         Ok(Self {
             config,
             pipe,
             shutdown_manager,
+            external_route,
+        })
+    }
+    /// # Safety
+    /// This method is safe if the provided fd is valid.
+    /// Construct a TUN from an existing file descriptor
+    #[cfg(unix)]
+    pub async unsafe fn open_with_tun_fd(config: Config, tun_fd: u32) -> anyhow::Result<Self> {
+        let (pipe, external_route, shutdown_manager) =
+            start_netlink(config.clone(), Some(tun_fd)).await?;
+        Ok(Self {
+            config,
+            pipe,
+            shutdown_manager,
+            external_route,
         })
     }
     pub fn close(self) {}
@@ -164,6 +186,17 @@ impl NetLinkCoreApi {
             });
         }
         Ok(group_codes)
+    }
+    pub fn update_external_route(
+        &self,
+        route_table: Vec<(u32, u32, Ipv4Addr)>,
+    ) -> anyhow::Result<()> {
+        if let Some(external_route) = self.external_route.as_ref() {
+            external_route.update(route_table);
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Does not support routing"))
+        }
     }
 }
 impl Drop for NetLinkCoreApi {

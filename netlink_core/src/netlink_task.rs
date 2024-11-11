@@ -18,11 +18,19 @@ use tachyonix::{channel, Sender};
 
 pub async fn start_netlink(
     config: Config,
-) -> anyhow::Result<(Arc<PipeWriter>, ShutdownManager<()>)> {
+    #[cfg(unix)] tun_fd: Option<u32>,
+) -> anyhow::Result<(Arc<PipeWriter>, Option<ExternalRoute>, ShutdownManager<()>)> {
     let shutdown_manager = ShutdownManager::<()>::new();
 
-    match start_netlink0(shutdown_manager.clone(), config).await {
-        Ok(writer) => Ok((writer, shutdown_manager)),
+    match start_netlink0(
+        shutdown_manager.clone(),
+        config,
+        #[cfg(unix)]
+        tun_fd,
+    )
+    .await
+    {
+        Ok((writer, external_route)) => Ok((writer, external_route, shutdown_manager)),
         Err(e) => {
             _ = shutdown_manager.trigger_shutdown(());
             Err(e)
@@ -32,7 +40,8 @@ pub async fn start_netlink(
 async fn start_netlink0(
     shutdown_manager: ShutdownManager<()>,
     config: Config,
-) -> anyhow::Result<Arc<PipeWriter>> {
+    #[cfg(unix)] tun_fd: Option<u32>,
+) -> anyhow::Result<(Arc<PipeWriter>, Option<ExternalRoute>)> {
     let udp_config = UdpPipeConfig::default().set_simple_udp_port(config.port);
     let tcp_config = TcpPipeConfig::default().set_tcp_port(config.port);
     let mut pipe_config = PipeConfig::empty()
@@ -58,50 +67,76 @@ async fn start_netlink0(
     let writer = Arc::new(pipe.writer());
 
     let (sender, mut receiver) = channel::<RecvUserData>(256);
+    let mut external_route_op = None;
+    #[cfg(unix)]
+    assert!(tun_fd.is_none() || config.prefix > 0, "configuration error");
     if config.prefix > 0 {
-        let mut dev_config = tun_rs::Configuration::default();
-        dev_config
-            .address_with_prefix(config.node_ipv4, config.prefix)
-            .platform_config(|_v| {
-                #[cfg(windows)]
-                {
-                    _v.ring_capacity(4 * 1024 * 1024);
-                    _v.metric(0);
-                }
-            })
-            .mtu(1400)
-            .up();
-        if let Some(name) = config.tun_name {
-            dev_config.name(name);
-        }
-        let device = tun_rs::create_as_async(&dev_config)?;
-        #[cfg(target_os = "linux")]
-        if let Err(e) = device.set_tx_queue_len(1000) {
-            log::warn!("set tx_queue_len failed. {e:?}");
-        }
-        let if_index = device.if_index().unwrap();
-        let name = device.name().unwrap();
-        log::info!("device index={if_index},name={name}",);
-        let v6 = config.node_ipv6;
-        if let Err(e) = device.add_address_v6(v6.into(), config.prefix_v6) {
-            log::warn!("add ipv6 failed. {e:?},v6={v6}");
-        } else {
-            log::info!("mapped ipv6 addr={v6}");
-        }
         let external_route = ExternalRoute::new(config.node_ipv4, config.prefix);
-
-        #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
-        {
-            route_listen::route_listen(shutdown_manager.clone(), if_index, external_route.clone())
-                .await?;
-            if let Some(exit_node) = config.exit_node {
-                exit_route::exit_route(exit_node, if_index).await?;
-            }
+        external_route_op.replace(external_route.clone());
+        #[cfg(unix)]
+        let mut device = Option::<AsyncDevice>::None;
+        #[cfg(not(unix))]
+        let device = Option::<AsyncDevice>::None;
+        #[cfg(unix)]
+        if let Some(tun_fd) = tun_fd {
+            device = Some(unsafe { AsyncDevice::from_fd(tun_fd as _)? })
         }
+        let device = if let Some(device) = device {
+            device
+        } else {
+            let mut dev_config = tun_rs::Configuration::default();
+            dev_config
+                .address_with_prefix(config.node_ipv4, config.prefix)
+                .platform_config(|_v| {
+                    #[cfg(windows)]
+                    {
+                        _v.ring_capacity(4 * 1024 * 1024);
+                        _v.metric(0);
+                    }
+                })
+                .mtu(1400)
+                .up();
+            if let Some(name) = config.tun_name {
+                dev_config.name(name);
+            }
 
-        #[cfg(target_os = "macos")]
+            let device = tun_rs::create_as_async(&dev_config)?;
+            let v6 = config.node_ipv6;
+            if let Err(e) = device.add_address_v6(v6.into(), config.prefix_v6) {
+                log::warn!("add ipv6 failed. {e:?},v6={v6}");
+            } else {
+                log::info!("mapped ipv6 addr={v6}");
+            }
+            device
+        };
+        #[cfg(any(
+            target_os = "windows",
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "freebsd"
+        ))]
         {
-            use tun_rs::AbstractDevice;
+            #[cfg(target_os = "linux")]
+            if let Err(e) = device.set_tx_queue_len(1000) {
+                log::warn!("set tx_queue_len failed. {e:?}");
+            }
+            let if_index = device.if_index().unwrap();
+            let name = device.name().unwrap();
+            log::info!("device index={if_index},name={name}",);
+            #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+            if config.listen_route {
+                route_listen::route_listen(
+                    shutdown_manager.clone(),
+                    if_index,
+                    external_route.clone(),
+                )
+                .await?;
+                if let Some(exit_node) = config.exit_node {
+                    exit_route::exit_route(exit_node, if_index).await?;
+                }
+            }
+
+            #[cfg(target_os = "macos")]
             device.set_ignore_packet_info(true);
         }
         let device = Arc::new(device);
@@ -157,7 +192,7 @@ async fn start_netlink0(
             }
         }
     }));
-    Ok(writer)
+    Ok((writer, external_route_op))
 }
 
 fn gen_salt(src_id: &NodeID, dest_id: &NodeID) -> [u8; 12] {
