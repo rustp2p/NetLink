@@ -1,7 +1,6 @@
-use crate::config::{Config, ConfigBuilder, PeerAddress};
+use crate::config::{Config, ConfigBuilder};
 use libc::{c_char, c_uchar, c_uint, c_ushort};
 use std::ffi::CStr;
-use std::str::FromStr;
 #[repr(C)]
 pub struct CConfig {
     listen_route: bool,
@@ -188,15 +187,6 @@ pub(crate) unsafe fn to_config(c_config: &CConfig) -> anyhow::Result<Config> {
     } else {
         Vec::new()
     };
-    let peer = if let Some(peer) = peer {
-        let mut list = Vec::new();
-        for addr in peer {
-            list.push(PeerAddress::from_str(&addr)?)
-        }
-        Some(list)
-    } else {
-        None
-    };
     let exit_node = if c_config.exit_node == 0 {
         None
     } else {
@@ -227,6 +217,6 @@ pub(crate) unsafe fn to_config(c_config: &CConfig) -> anyhow::Result<Config> {
         .config_name(config_name)
         .tun_name(tun_name)
         .bind_dev_name(bind_dev_name)
-        .peer(peer);
+        .peer_str(peer)?;
     builder.build()
 }

@@ -1,11 +1,10 @@
 use std::fmt::Debug;
 use std::net::SocketAddr;
-use std::str::FromStr;
 
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 
-use netlink_http::{default_tcp_stun, default_udp_stun, Config, ConfigBuilder, PeerAddress};
+use netlink_http::{default_tcp_stun, default_udp_stun, Config, ConfigBuilder};
 
 use crate::{CMD_ADDRESS, DEFAULT_ALGORITHM, LISTEN_PORT};
 
@@ -55,15 +54,6 @@ impl TryFrom<FileConfigView> for Config {
     type Error = anyhow::Error;
 
     fn try_from(value: FileConfigView) -> Result<Self, Self::Error> {
-        let peer = if let Some(peer) = value.peer {
-            let mut list = Vec::new();
-            for addr in peer {
-                list.push(PeerAddress::from_str(&addr)?)
-            }
-            Some(list)
-        } else {
-            None
-        };
         let node_ipv6 = if let Some(node_ipv6) = value.node_ipv6 {
             Some(node_ipv6.parse().context("node_ipv6 format error")?)
         } else {
@@ -83,7 +73,7 @@ impl TryFrom<FileConfigView> for Config {
             .config_name(Some("file_config".to_string()))
             .tun_name(value.tun_name)
             .bind_dev_name(value.bind_dev_name)
-            .peer(peer);
+            .peer_str(value.peer)?;
 
         if let Some(exit_node) = value.exit_node {
             builder = builder.exit_node(Some(exit_node.parse().context("node_ipv6 format error")?))

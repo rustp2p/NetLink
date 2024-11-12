@@ -139,10 +139,27 @@ impl ConfigBuilder {
         self.group_code = Some(group_code);
         self
     }
+    pub fn group_code_str(mut self, group_code: String) -> anyhow::Result<Self> {
+        self.group_code = Some(group_code.try_into()?);
+        Ok(self)
+    }
 
     pub fn peer(mut self, peer: Option<Vec<PeerAddress>>) -> Self {
         self.peer = peer;
         self
+    }
+    pub fn peer_str(mut self, peer: Option<Vec<String>>) -> anyhow::Result<Self> {
+        let peer = if let Some(peer) = peer {
+            let mut list = Vec::new();
+            for addr in peer {
+                list.push(PeerAddress::from_str(&addr)?)
+            }
+            Some(list)
+        } else {
+            None
+        };
+        self.peer = peer;
+        Ok(self)
     }
 
     pub fn bind_dev_name(mut self, bind_dev_name: Option<String>) -> Self {
@@ -303,7 +320,13 @@ impl Display for PeerAddress {
         std::fmt::Display::fmt(&self.0, f)
     }
 }
+impl TryFrom<String> for PeerAddress {
+    type Error = anyhow::Error;
 
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        PeerAddress::from_str(&value)
+    }
+}
 impl FromStr for PeerAddress {
     type Err = anyhow::Error;
 
