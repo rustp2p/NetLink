@@ -100,8 +100,8 @@ impl ConfigBuilder {
         self
     }
 
-    pub fn node_ipv6(mut self, node_ipv6: Ipv6Addr) -> Self {
-        self.node_ipv6 = Some(node_ipv6);
+    pub fn node_ipv6(mut self, node_ipv6: Option<Ipv6Addr>) -> Self {
+        self.node_ipv6 = node_ipv6;
         self
     }
 

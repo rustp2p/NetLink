@@ -64,11 +64,16 @@ impl TryFrom<FileConfigView> for Config {
         } else {
             None
         };
-
+        let node_ipv6 = if let Some(node_ipv6) = value.node_ipv6 {
+            Some(node_ipv6.parse().context("node_ipv6 format error")?)
+        } else {
+            None
+        };
         let mut builder = ConfigBuilder::new()
             .udp_stun(value.udp_stun)
             .tcp_stun(value.tcp_stun)
             .node_ipv4(value.node_ipv4.parse().context("node_ipv4 format error")?)
+            .node_ipv6(node_ipv6)
             .prefix(value.prefix)
             .prefix_v6(value.prefix_v6)
             .group_code(value.group_code.try_into()?)
@@ -79,9 +84,6 @@ impl TryFrom<FileConfigView> for Config {
             .tun_name(value.tun_name)
             .bind_dev_name(value.bind_dev_name)
             .peer(peer);
-        if let Some(node_ipv6) = value.node_ipv6 {
-            builder = builder.node_ipv6(node_ipv6.parse().context("node_ipv6 format error")?)
-        }
 
         if let Some(exit_node) = value.exit_node {
             builder = builder.exit_node(Some(exit_node.parse().context("node_ipv6 format error")?))

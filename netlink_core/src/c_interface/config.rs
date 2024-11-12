@@ -211,11 +211,12 @@ pub(crate) unsafe fn to_config(c_config: &CConfig) -> anyhow::Result<Config> {
             Some(node_ipv6.into())
         }
     };
-    let mut builder = ConfigBuilder::new()
+    let builder = ConfigBuilder::new()
         .listen_route(c_config.listen_route)
         .udp_stun(udp_stun)
         .tcp_stun(tcp_stun)
         .node_ipv4(c_config.node_ipv4.into())
+        .node_ipv6(node_ipv6)
         .exit_node(exit_node)
         .prefix(c_config.prefix)
         .prefix_v6(c_config.prefix_v6)
@@ -227,8 +228,5 @@ pub(crate) unsafe fn to_config(c_config: &CConfig) -> anyhow::Result<Config> {
         .tun_name(tun_name)
         .bind_dev_name(bind_dev_name)
         .peer(peer);
-    if let Some(node_ipv6) = node_ipv6 {
-        builder = builder.node_ipv6(node_ipv6);
-    }
     builder.build()
 }
