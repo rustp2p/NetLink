@@ -393,3 +393,26 @@ pub(crate) fn group_code_to_string(group_code: &rustp2p::protocol::node_id::Grou
         Err(_) => format!("{:?}", group_code.as_ref()),
     }
 }
+
+impl fmt::Debug for Config {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Config")
+            .field("listen_route", &self.listen_route)
+            .field("config_name", &self.config_name)
+            .field("node_ipv4", &self.node_ipv4)
+            .field("node_ipv6", &self.node_ipv6)
+            .field("prefix", &self.prefix)
+            .field("prefix_v6", &self.prefix_v6)
+            .field("tun_name", &self.tun_name)
+            .field("encrypt", &self.encrypt)
+            .field("algorithm", &self.algorithm)
+            .field("port", &self.port)
+            .field("group_code", &self.group_code)
+            .field("peer", &self.peer)
+            .field("bind_dev_name", &self.bind_dev_name)
+            .field("exit_node", &self.exit_node)
+            .field("udp_stun", &self.udp_stun)
+            .field("tcp_stun", &self.tcp_stun)
+            .finish()
+    }
+}
