@@ -89,7 +89,7 @@ impl NetLinkCoreApi {
                     };
 
                     list.push(RouteItem {
-                        node_id: format!("{}", Ipv4Addr::from(node_id)),
+                        node_id: Ipv4Addr::from(node_id),
                         next_hop: next_hop.unwrap_or_default(),
                         protocol: format!("{:?}", route.route_key().protocol()),
                         metric: route.metric(),
@@ -102,7 +102,7 @@ impl NetLinkCoreApi {
                 }
             }
             list.push(RouteItem {
-                node_id: format!("{}", Ipv4Addr::from(node_id)),
+                node_id: Ipv4Addr::from(node_id),
                 next_hop: String::new(),
                 protocol: "Not linked".to_string(),
                 metric: 0,
@@ -142,7 +142,7 @@ impl NetLinkCoreApi {
                     };
 
                     list.push(RouteItem {
-                        node_id: format!("{}", Ipv4Addr::from(node_id)),
+                        node_id: Ipv4Addr::from(node_id),
                         next_hop: next_hop.unwrap_or_default(),
                         protocol: format!("{:?}", route.route_key().protocol()),
                         metric: route.metric(),
@@ -155,7 +155,7 @@ impl NetLinkCoreApi {
                 }
             }
             list.push(RouteItem {
-                node_id: format!("{}", Ipv4Addr::from(node_id)),
+                node_id: Ipv4Addr::from(node_id),
                 next_hop: String::new(),
                 protocol: "Not linked".to_string(),
                 metric: 0,

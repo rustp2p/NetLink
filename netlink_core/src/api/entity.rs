@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RouteItem {
-    pub node_id: String,
+    pub node_id: Ipv4Addr,
     pub next_hop: String,
     pub protocol: String,
     pub metric: u8,
