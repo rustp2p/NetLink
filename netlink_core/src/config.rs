@@ -212,6 +212,9 @@ impl ConfigBuilder {
         };
         let mut iface_option = None;
         if let Some(bind_dev_name) = self.bind_dev_name.clone() {
+            if bind_dev_name.is_empty() {
+                Err(anyhow::anyhow!("bind_dev_name is empty"))?
+            }
             let _bind_dev_index = match crate::platform::dev_name_to_index(&bind_dev_name) {
                 Ok(index) => index,
                 Err(e) => Err(anyhow::anyhow!("bind_dev_name error: {e}"))?,
