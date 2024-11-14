@@ -143,9 +143,10 @@ async fn start_netlink0(
         let device_r = device.clone();
         let cipher = config.cipher.clone();
         let pipe_writer = writer.clone();
+        let shutdown_manager_ = shutdown_manager.clone();
         tokio::spawn(shutdown_manager.wrap_cancel(async move {
             if let Err(e) = tun_recv(
-                pipe_writer,
+                &pipe_writer,
                 device_r,
                 config.node_ipv4,
                 external_route,
@@ -155,6 +156,8 @@ async fn start_netlink0(
             {
                 log::warn!("device.recv {e:?}")
             }
+            _ = pipe_writer.shutdown();
+            _ = shutdown_manager_.trigger_shutdown(());
         }));
         let cipher = config.cipher.clone();
         tokio::spawn(shutdown_manager.wrap_cancel(async move {
@@ -179,7 +182,7 @@ async fn start_netlink0(
     }
     log::info!("listen local port: {}", config.port);
 
-    tokio::spawn(shutdown_manager.wrap_cancel(async move {
+    tokio::spawn(async move {
         loop {
             match pipe.accept().await {
                 Ok(line) => {
@@ -191,7 +194,8 @@ async fn start_netlink0(
                 }
             }
         }
-    }));
+        _ = shutdown_manager.trigger_shutdown(());
+    });
     Ok((writer, external_route_op))
 }
 
@@ -227,7 +231,7 @@ async fn line_recv(mut line: PipeLine, sender: Sender<RecvUserData>) {
 }
 
 async fn tun_recv(
-    pipe_writer: Arc<PipeWriter>,
+    pipe_writer: &Arc<PipeWriter>,
     device: Arc<AsyncDevice>,
     self_ip: Ipv4Addr,
     external_route: ExternalRoute,
@@ -237,9 +241,7 @@ async fn tun_recv(
     loop {
         let mut send_packet = pipe_writer.allocate_send_packet();
         unsafe { send_packet.set_payload_len(send_packet.capacity()) };
-        let Ok(payload_len) = device.recv(&mut send_packet).await else {
-            return Ok(());
-        };
+        let payload_len = device.recv(&mut send_packet).await?;
         unsafe { send_packet.set_payload_len(payload_len) };
         let buf: &mut [u8] = &mut send_packet;
         if buf.len() < 20 {

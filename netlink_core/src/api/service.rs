@@ -47,6 +47,22 @@ impl NetLinkCoreApi {
         })
     }
     pub fn close(self) {}
+    pub fn shutdown(&self) {
+        _ = self.pipe.shutdown();
+        _ = self.shutdown_manager.trigger_shutdown(());
+    }
+    pub async fn wait_shutdown_triggered(&self) {
+        self.shutdown_manager.wait_shutdown_triggered().await
+    }
+    pub async fn wait_shutdown_complete(&self) {
+        self.shutdown_manager.wait_shutdown_complete().await
+    }
+    pub fn is_shutdown_triggered(&self) -> bool {
+        self.shutdown_manager.is_shutdown_triggered()
+    }
+    pub fn is_shutdown_completed(&self) -> bool {
+        self.shutdown_manager.is_shutdown_completed()
+    }
     pub fn current_config(&self) -> &Config {
         &self.config
     }
