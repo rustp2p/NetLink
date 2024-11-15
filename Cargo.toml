@@ -26,6 +26,7 @@ rust-embed = { version = "8.5", features = ["compression", "include-exclude", "m
 
 
 [features]
+default = []
 
 [profile.release]
 opt-level = 'z'
