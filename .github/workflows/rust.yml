@@ -77,6 +77,11 @@ jobs:
           - TARGET: mips-unknown-linux-musl # openwrt
             OS: ubuntu-latest
             FEATURES: default
+          - TARGET: x86_64-unknown-freebsd
+            OS: ubuntu-latest
+            ARTIFACT_NAME: freebsd-13.2-x86_64
+            FEATURES: default
+            BSD_VERSION: 13.2
     # needs: test
     runs-on: ${{ matrix.OS }}
     env:
@@ -108,7 +113,43 @@ jobs:
           cp -r ./web-app/dist/* ./static/
       - name: List
         run: find ./
+      - name: Build NetLink X86_64-FreeBSD
+        uses: cross-platform-actions/action@v0.23.0
+        if: ${{ endsWith(matrix.TARGET, 'freebsd') }}
+        env:
+          TARGET: ${{ matrix.TARGET }}
+        with:
+          operating_system: freebsd
+          environment_variables: TARGET
+          architecture: x86-64
+          version: ${{ matrix.BSD_VERSION }}
+          shell: bash
+          memory: 5G
+          cpu_count: 4
+          run: |
+            uname -a
+            echo $SHELL
+            pwd
+            ls -lah
+            whoami
+            env | sort
+
+            sudo pkg install -y git protobuf
+            curl --proto 'https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+            source $HOME/.cargo/env
+
+            rustup set auto-self-update disable
+
+            rustup install 1.77
+            rustup default 1.77
+
+            export CC=clang
+            export CXX=clang++
+            export CARGO_TERM_COLOR=always
+
+            cargo build --release --verbose --target $TARGET
       - name: Install and configure dependencies
+        if: ${{ ! endsWith(matrix.TARGET, 'freebsd') }}
         run: |
           # dependencies are only needed on ubuntu as that's the only place where
           # we make cross-compilation
@@ -199,8 +240,10 @@ jobs:
           rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C","link-dead-code"]   
           EOF
       - name: Install rust target
+        if: ${{ ! endsWith(matrix.TARGET, 'freebsd') }}
         run: rustup target add $TARGET
       - name: Run build NetLink
+        if: ${{ ! endsWith(matrix.TARGET, 'freebsd') }}
         run: cargo build --release --verbose --target $TARGET --features $FEATURES
       - name: List target
         run: find ./target
