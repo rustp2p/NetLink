@@ -256,6 +256,10 @@ Node-C <--> Node-A(192.168.10.2) <--> Node-B(192.168.10.3)
 
 此时, Node-C可以通过Node-A访问Node_B, 就像Node-C和Node-B是直连的一样
 
+## 链接库集成
+
+https://github.com/rustp2p/NetLink_adapter
+
 ## 联系
 
 - 电报: https://t.me/+hdMW5gWNNBphZDI1

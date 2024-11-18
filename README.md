@@ -255,6 +255,10 @@ Node-C <--> Node-A(192.168.10.2) <--> Node-B(192.168.10.3)
 At this point, Node-C can access the IP address of Node-B(192.168.10.3) via Node-A as if Node-C was directly connected
 to Node-B.
 
+## Link library
+
+https://github.com/rustp2p/NetLink_adapter
+
 ## Contact
 
 - TG: https://t.me/+hdMW5gWNNBphZDI1
