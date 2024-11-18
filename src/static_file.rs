@@ -2,7 +2,6 @@ use netlink_http::web_server::StaticFileAssets;
 
 #[derive(rust_embed::Embed)]
 #[folder = "static/"]
-#[exclude = "README.md"]
 struct StaticAssetsInner;
 
 #[derive(Copy, Clone)]
