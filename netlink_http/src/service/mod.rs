@@ -59,11 +59,12 @@ impl ApiService {
     }
 }
 impl ApiService {
-    pub fn started_config(&self) -> Option<Config> {
-        self.api
+    pub fn started_config(&self) -> anyhow::Result<Option<Config>> {
+        let config = self.api
             .lock()
             .as_ref()
-            .map(|(v, _)| v.current_config().clone())
+            .map(|(v, _)| v.current_config().clone());
+        Ok(config)
     }
     pub fn current_config(&self) -> anyhow::Result<Option<Config>> {
         let config = if let Some((config, _)) = self.config.lock().clone() {

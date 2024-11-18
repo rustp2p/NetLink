@@ -258,6 +258,15 @@ pub async fn start<A: StaticFileAssets>(
             .options(handler::empty()),
     );
     let router = router.push(
+        Router::with_path("started-config")
+            .get(ApiQueryHandler(
+                api_service.clone(),
+                ApiService::started_config as _,
+                false,
+            ))
+            .options(handler::empty()),
+    );
+    let router = router.push(
         Router::with_path("current-info")
             .get(ApiQueryHandler(
                 api_service.clone(),
