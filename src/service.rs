@@ -44,6 +44,7 @@ impl ApiService {
         }
         Ok(api_service)
     }
+    #[allow(dead_code)]
     pub fn inner_api(&self) -> Api {
         self.api.clone()
     }

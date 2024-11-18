@@ -1,18 +1,15 @@
-use clap::Parser;
-use env_logger::Env;
-use std::future::Future;
-
-use anyhow::anyhow;
-
 use crate::config::FileConfigView;
 use crate::service::ApiService;
-use crate::static_file::StaticAssets;
+use clap::Parser;
+use env_logger::Env;
 use netlink_http::{Config, ConfigBuilder, PeerAddress};
+use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 
 mod config;
 mod service;
+#[cfg(feature = "web")]
 mod static_file;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -197,15 +194,19 @@ async fn main_by_config_file(file_config: FileConfigView) -> anyhow::Result<()> 
 
 async fn start_by_config(
     config: Option<Config>,
-    cmd_server_addr: Option<SocketAddr>,
+    _cmd_server_addr: Option<SocketAddr>,
 ) -> anyhow::Result<()> {
     let api_service = ApiService::new(config).await?;
-    if let Some(cmd_server_addr) = cmd_server_addr {
-        if let Err(e) =
-            netlink_http::web_server::start(cmd_server_addr, api_service.inner_api(), StaticAssets)
-                .await
+    #[cfg(feature = "web")]
+    if let Some(cmd_server_addr) = _cmd_server_addr {
+        if let Err(e) = netlink_http::web_server::start(
+            cmd_server_addr,
+            api_service.inner_api(),
+            static_file::StaticAssets,
+        )
+        .await
         {
-            return Err(anyhow!("The backend command port has already been used. Please use 'cmd --api-addr' to change the port, err={e}"));
+            return Err(anyhow::anyhow!("The backend command port has already been used. Please use 'cmd --api-addr' to change the port, err={e}"));
         }
     }
 
@@ -217,6 +218,9 @@ async fn start_by_config(
     .await;
     if api_service.exist_config() {
         api_service.open().await?;
+    } else {
+        #[cfg(not(feature = "web"))]
+        Err(anyhow::anyhow!("Configuration not found"))?
     }
     _ = quit.recv().await;
     _ = api_service.close();
