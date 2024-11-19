@@ -60,7 +60,8 @@ impl ApiService {
 }
 impl ApiService {
     pub fn started_config(&self) -> anyhow::Result<Option<Config>> {
-        let config = self.api
+        let config = self
+            .api
             .lock()
             .as_ref()
             .map(|(v, _)| v.current_config().clone());
