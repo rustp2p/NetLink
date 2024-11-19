@@ -22,13 +22,12 @@ Options:
       --exit-node <EXIT_NODE>    Global exit node,please use it together with '--bind-dev'
       --tun-name <TUN_NAME>      Set tun name
   -f, --config <CONFIG>          Start using configuration file
-      --api-addr <API_ADDR>      Set backend cmd/http server address [default: 127.0.0.1:23336]
-      --api-disable              Disable backend cmd/http server
+      --api-addr <API_ADDR>      Set backend http server address [default: 127.0.0.1:23336]
+      --api-disable              Disable backend http server
   -h, --help                     Print help information
   -V, --version                  Print version information
 
  ```
-
 
 ## Start with config file
 
@@ -101,16 +100,17 @@ node_ipv4: "10.26.1.2"
 
 ## Features
 
-| Features           |   |
-|--------------------|---| 
-| **Decentralized**  | ✅ |
-| **Cross-platform** | ✅ |
-| **NAT traversal**  | ✅ | 
-| **Subnet route**   | ✅ | 
-| **Encryption**     | ✅ | 
-| **Efficient**      | ✅ | 
-| **IPv6/Ipv4**      | ✅ | 
-| **UDP/TCP**        | ✅ | 
+| Features                |   |
+|-------------------------|---| 
+| **Decentralized**       | ✅ |
+| **Cross-platform**      | ✅ |
+| **NAT traversal**       | ✅ | 
+| **Subnet route**        | ✅ | 
+| **Encryption**          | ✅ | 
+| **Efficient**           | ✅ | 
+| **HTTP/Rust/C/JNI API** | ✅ | 
+| **IPv6/IPv4**           | ✅ | 
+| **UDP/TCP**             | ✅ | 
 
 ## Quick Start
 
