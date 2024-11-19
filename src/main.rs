@@ -4,7 +4,9 @@ use clap::Parser;
 use env_logger::Env;
 use netlink_http::{Config, ConfigBuilder, PeerAddress};
 use std::future::Future;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::Ipv4Addr;
+#[cfg(feature = "web")]
+use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 
 mod config;
@@ -56,9 +58,11 @@ struct Args {
     config: Option<String>,
     /// Set backend http server address
     #[arg(long, default_value = CMD_ADDRESS_STR)]
+    #[cfg(feature = "web")]
     api_addr: Option<String>,
     /// Disable backend http server
     #[arg(long)]
+    #[cfg(feature = "web")]
     api_disable: bool,
 }
 
@@ -70,13 +74,15 @@ struct ArgsConfig {
 
 #[derive(Parser, Debug)]
 struct ArgsApiConfig {
+    #[cfg(feature = "web")]
     #[arg(long, default_value = CMD_ADDRESS_STR)]
     api_addr: String,
     #[arg(long, default_value = "2")]
     threads: usize,
 }
-
+#[cfg(feature = "web")]
 const CMD_ADDRESS: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 23336);
+#[cfg(feature = "web")]
 const CMD_ADDRESS_STR: &str = "127.0.0.1:23336";
 const LISTEN_PORT: u16 = 23333;
 const LISTEN_PORT_STR: &str = "23333";
@@ -99,7 +105,11 @@ pub fn main() -> anyhow::Result<()> {
                 if let Ok(args) = ArgsApiConfig::try_parse() {
                     return block_on(
                         args.threads,
-                        start_by_config(None, Some(SocketAddr::from_str(&args.api_addr)?)),
+                        start_by_config(
+                            None,
+                            #[cfg(feature = "web")]
+                            Some(SocketAddr::from_str(&args.api_addr)?),
+                        ),
                     );
                 }
                 println!("{e}");
@@ -140,7 +150,9 @@ async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
             algorithm,
             exit_node,
             tun_name,
+            #[cfg(feature = "web")]
             api_addr,
+            #[cfg(feature = "web")]
             api_disable,
             ..
         } = args;
@@ -165,6 +177,7 @@ async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
             .bind_dev_name(bind_dev)
             .exit_node(exit_node)
             .build()?;
+        #[cfg(feature = "web")]
         let api_addr = if api_disable {
             None
         } else if let Some(api_addr) = api_addr {
@@ -174,31 +187,47 @@ async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
         } else {
             Some(CMD_ADDRESS)
         };
-        start_by_config(Some(config), api_addr).await?;
+        start_by_config(
+            Some(config),
+            #[cfg(feature = "web")]
+            api_addr,
+        )
+        .await?;
     } else {
-        start_by_config(None, Some(SocketAddr::from_str(CMD_ADDRESS_STR).unwrap())).await?;
+        start_by_config(
+            None,
+            #[cfg(feature = "web")]
+            Some(SocketAddr::from_str(CMD_ADDRESS_STR).unwrap()),
+        )
+        .await?;
     }
 
     Ok(())
 }
 
 async fn main_by_config_file(file_config: FileConfigView) -> anyhow::Result<()> {
+    #[cfg(feature = "web")]
     let addr = if file_config.api_disable {
         None
     } else {
         Some(file_config.api_addr)
     };
     let config = file_config.try_into()?;
-    start_by_config(Some(config), addr).await
+    start_by_config(
+        Some(config),
+        #[cfg(feature = "web")]
+        addr,
+    )
+    .await
 }
 
 async fn start_by_config(
     config: Option<Config>,
-    _cmd_server_addr: Option<SocketAddr>,
+    #[cfg(feature = "web")] cmd_server_addr: Option<SocketAddr>,
 ) -> anyhow::Result<()> {
     let api_service = ApiService::new(config).await?;
     #[cfg(feature = "web")]
-    if let Some(cmd_server_addr) = _cmd_server_addr {
+    if let Some(cmd_server_addr) = cmd_server_addr {
         if let Err(e) = netlink_http::web_server::start(
             cmd_server_addr,
             api_service.inner_api(),

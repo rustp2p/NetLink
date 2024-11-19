@@ -1,17 +1,17 @@
 use std::fmt::Debug;
-use std::net::SocketAddr;
 
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 
 use netlink_http::{default_tcp_stun, default_udp_stun, Config, ConfigBuilder};
 
-use crate::{CMD_ADDRESS, DEFAULT_ALGORITHM, LISTEN_PORT};
-
+use crate::{DEFAULT_ALGORITHM, LISTEN_PORT};
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct FileConfigView {
-    pub api_addr: SocketAddr,
+    #[cfg(feature = "web")]
+    pub api_addr: std::net::SocketAddr,
+    #[cfg(feature = "web")]
     pub api_disable: bool,
     pub threads: usize,
 
@@ -86,7 +86,9 @@ impl TryFrom<FileConfigView> for Config {
 impl Default for FileConfigView {
     fn default() -> Self {
         Self {
-            api_addr: CMD_ADDRESS,
+            #[cfg(feature = "web")]
+            api_addr: crate::CMD_ADDRESS,
+            #[cfg(feature = "web")]
             api_disable: false,
             threads: 2,
             group_code: "".to_string(),
