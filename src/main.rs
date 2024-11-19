@@ -54,10 +54,10 @@ struct Args {
     /// Start using configuration file
     #[arg(short = 'f', long)]
     config: Option<String>,
-    /// Set backend cmd/http server address
+    /// Set backend http server address
     #[arg(long, default_value = CMD_ADDRESS_STR)]
     api_addr: Option<String>,
-    /// Disable backend cmd/http server
+    /// Disable backend http server
     #[arg(long)]
     api_disable: bool,
 }

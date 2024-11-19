@@ -28,6 +28,10 @@ Options:
       --exit-node <EXIT_NODE>    网关节点，请配合'--bind-dev'使用
       --tun-name <TUN_NAME>      设定本地tun的名称
   -f, --config <CONFIG>          使用配置文件启动
+      --api-addr <API_ADDR>      设置http服务地址，默认是：127.0.0.1:23336
+      --api-disable              禁用http服务
+  -h, --help                     帮助
+  -V, --version                  版本
 
  ```
 

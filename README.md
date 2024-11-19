@@ -10,22 +10,23 @@ Usage: ./netLink.exe
 Usage: ./netLink.exe --api_addr 192.168.0.1:8080
 Usage: netLink.exe [OPTIONS] --local <LOCAL IP> --group-code <GROUP CODE>
 
-Commands:
-  cmd   Backend command
-  help  Print this message or the help of the given subcommand(s)
-
 Options:
   -p, --peer <PEER>              Peer node address. e.g.: -p tcp://192.168.10.13:23333 -p udp://192.168.10.23:23333
-  -l, --local <LOCAL IP>         Local node IP and prefix. e.g.: -l 10.26.0.2/24
+  -l, --local <LOCAL IP>         Local node IP and prefix.If there is no 'prefix', Will not enable Tun. e.g.: -l 10.26.0.2/24
   -g, --group-code <GROUP CODE>  Nodes with the same group_code can form a network (Maximum length 16)
-  -P, --port <PORT>              Listen local port
+  -P, --port <PORT>              Listen local port [default: 23333]
   -b, --bind-dev <DEVICE NAME>   Bind the outgoing network interface (using the interface name). e.g.: -b eth0
-      --threads <THREADS>        Set the number of threads, default to 2
+      --threads <THREADS>        Set the number of threads [default: 2]
   -e, --encrypt <PASSWORD>       Enable data encryption. e.g.: -e "password"
-  -a, --algorithm <ALGORITHM>    Set encryption algorithm. Optional aes-gcm/chacha20-poly1305/xor, default is chacha20-poly1305
+  -a, --algorithm <ALGORITHM>    Set encryption algorithm. Optional aes-gcm/chacha20-poly1305/xor [default: chacha20-poly1305]
       --exit-node <EXIT_NODE>    Global exit node,please use it together with '--bind-dev'
       --tun-name <TUN_NAME>      Set tun name
   -f, --config <CONFIG>          Start using configuration file
+      --api-addr <API_ADDR>      Set backend cmd/http server address [default: 127.0.0.1:23336]
+      --api-disable              Disable backend cmd/http server
+  -h, --help                     Print help information
+  -V, --version                  Print version information
+
  ```
 
 
