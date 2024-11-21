@@ -58,7 +58,7 @@ pub struct Config {
     #[serde(skip_serializing)]
     pub(crate) iface_option: Option<LocalInterface>,
     pub(crate) exit_node: Option<Ipv4Addr>,
-
+    pub(crate) mtu: Option<u16>,
     pub(crate) udp_stun: Vec<String>,
     pub(crate) tcp_stun: Vec<String>,
 }
@@ -79,6 +79,7 @@ pub struct ConfigBuilder {
     peer: Option<Vec<PeerAddress>>,
     bind_dev_name: Option<String>,
     exit_node: Option<Ipv4Addr>,
+    mtu: Option<u16>,
     udp_stun: Option<Vec<String>>,
     tcp_stun: Option<Vec<String>>,
 }
@@ -248,6 +249,7 @@ impl ConfigBuilder {
             bind_dev_name: self.bind_dev_name,
             iface_option,
             exit_node: self.exit_node,
+            mtu: self.mtu,
             udp_stun: self.udp_stun.unwrap_or(default_udp_stun()),
             tcp_stun: self.tcp_stun.unwrap_or(default_tcp_stun()),
         };

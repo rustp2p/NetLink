@@ -1,5 +1,3 @@
-use std::{net::Ipv4Addr, sync::Arc};
-
 use async_shutdown::ShutdownManager;
 use futures::FutureExt;
 use rustp2p::{
@@ -7,6 +5,8 @@ use rustp2p::{
     pipe::{Pipe, PipeLine, PipeWriter, RecvError, RecvUserData},
     protocol::node_id::NodeID,
 };
+use std::collections::VecDeque;
+use std::{net::Ipv4Addr, sync::Arc};
 use tun_rs::{AbstractDevice, AsyncDevice};
 
 use crate::cipher;
@@ -14,7 +14,7 @@ use crate::config::Config;
 use crate::route::ExternalRoute;
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use crate::route::{exit_route, route_listen};
-use tachyonix::{channel, Sender};
+use tachyonix::{channel, Receiver, Sender};
 
 pub async fn start_netlink(
     config: Config,
@@ -42,6 +42,7 @@ async fn start_netlink0(
     config: Config,
     #[cfg(unix)] tun_fd: Option<u32>,
 ) -> anyhow::Result<(Arc<PipeWriter>, Option<ExternalRoute>)> {
+    let mtu = config.mtu.unwrap_or(1400);
     let udp_config = UdpPipeConfig::default().set_simple_udp_port(config.port);
     let tcp_config = TcpPipeConfig::default().set_tcp_port(config.port);
     let mut pipe_config = PipeConfig::empty()
@@ -55,6 +56,8 @@ async fn start_netlink0(
                 .map(|v| v.0)
                 .collect(),
         )
+        .set_recv_buffer_size(512 + mtu as usize)
+        .set_send_buffer_size(512 + mtu as usize)
         .set_group_code(config.group_code.0)
         .set_node_id(config.node_ipv4.into())
         .set_udp_stun_servers(config.udp_stun)
@@ -93,8 +96,10 @@ async fn start_netlink0(
                         _v.ring_capacity(4 * 1024 * 1024);
                         _v.metric(0);
                     }
+                    #[cfg(target_os = "linux")]
+                    _v.offload(true);
                 })
-                .mtu(1400)
+                .mtu(mtu)
                 .up();
             if let Some(name) = config.tun_name {
                 dev_config.name(name);
@@ -151,6 +156,7 @@ async fn start_netlink0(
                 config.node_ipv4,
                 external_route,
                 cipher,
+                mtu,
             )
             .await
             {
@@ -161,23 +167,7 @@ async fn start_netlink0(
         }));
         let cipher = config.cipher.clone();
         tokio::spawn(shutdown_manager.wrap_cancel(async move {
-            while let Ok(mut buf) = receiver.recv().await {
-                if let Some(cipher) = cipher.as_ref() {
-                    match cipher.decrypt(gen_salt(&buf.src_id(), &buf.dest_id()), buf.payload_mut())
-                    {
-                        Ok(len) => {
-                            if let Err(e) = device.send(&buf.payload()[..len]).await {
-                                log::warn!("device.send {e:?}")
-                            }
-                        }
-                        Err(e) => {
-                            log::warn!("decrypt {e:?},{:?}->{:?}", buf.src_id(), buf.dest_id())
-                        }
-                    }
-                } else if let Err(e) = device.send(buf.payload()).await {
-                    log::warn!("device.send {e:?}")
-                }
-            }
+            tun_send(receiver, cipher, device).await;
         }));
     }
     log::info!("listen local port: {}", config.port);
@@ -229,13 +219,139 @@ async fn line_recv(mut line: PipeLine, sender: Sender<RecvUserData>) {
         }
     }
 }
+#[cfg(target_os = "linux")]
+async fn tun_send(
+    mut receiver: Receiver<RecvUserData>,
+    cipher: Option<cipher::Cipher>,
+    device: Arc<AsyncDevice>,
+) {
+    todo!()
+    // let mut table = tun_rs::platform::GROTable::default();
+    // while let Ok(mut buf) = receiver.recv().await {
+    //     if let Some(cipher) = cipher.as_ref() {
+    //         match cipher.decrypt(gen_salt(&buf.src_id(), &buf.dest_id()), buf.payload_mut())
+    //         {
+    //             Ok(len) => {
+    //                 if let Err(e) = device.send(&buf.payload()[..len]).await {
+    //                     log::warn!("device.send {e:?}")
+    //                 }
+    //             }
+    //             Err(e) => {
+    //                 log::warn!("decrypt {e:?},{:?}->{:?}", buf.src_id(), buf.dest_id())
+    //             }
+    //         }
+    //     } else if let Err(e) = device.send(buf.payload()).await {
+    //         log::warn!("device.send {e:?}")
+    //     }
+    // }
+}
 
+#[cfg(target_os = "linux")]
 async fn tun_recv(
     pipe_writer: &Arc<PipeWriter>,
     device: Arc<AsyncDevice>,
     self_ip: Ipv4Addr,
     external_route: ExternalRoute,
     cipher: Option<cipher::Cipher>,
+    mtu: u16,
+) -> anyhow::Result<()> {
+    let self_id: NodeID = self_ip.into();
+    let mut original_buffer = vec![0; tun_rs::platform::VIRTIO_NET_HDR_LEN + 65535];
+    let num = 65535 / mtu as usize + 1;
+    let mut bufs = VecDeque::with_capacity(num);
+    let mut sizes = vec![0; num];
+
+    loop {
+        while bufs.len() < num {
+            let mut send_packet = pipe_writer.allocate_send_packet();
+            unsafe { send_packet.set_payload_len(send_packet.capacity()) };
+            bufs.push_back(send_packet);
+        }
+        let num = device
+            .recv_multiple(&mut original_buffer, &mut bufs, &mut sizes, 0)
+            .await?;
+        for i in 0..num {
+            let mut send_packet = bufs.pop_front().unwrap();
+            let payload_len = sizes[i];
+            unsafe { send_packet.set_payload_len(payload_len) };
+            let buf: &mut [u8] = &mut send_packet;
+            if buf.len() < 20 {
+                continue;
+            }
+            let mut v6 = false;
+            let mut dest_ip = if buf[0] >> 4 != 4 {
+                if let Some(ipv6_packet) = pnet_packet::ipv6::Ipv6Packet::new(buf) {
+                    let last: [u8; 4] = ipv6_packet.get_destination().octets()[12..]
+                        .try_into()
+                        .unwrap();
+                    v6 = true;
+                    Ipv4Addr::from(last)
+                } else {
+                    continue;
+                }
+            } else {
+                Ipv4Addr::new(buf[16], buf[17], buf[18], buf[19])
+            };
+            if dest_ip.is_unspecified() {
+                continue;
+            }
+            if dest_ip.is_broadcast() || dest_ip.is_multicast() || buf[19] == 255 {
+                if v6 {
+                    continue;
+                }
+                dest_ip = Ipv4Addr::BROADCAST;
+            }
+            let dest_id = if v6 {
+                dest_ip.into()
+            } else if let Some(next_hop) = external_route.route(&dest_ip) {
+                next_hop.into()
+            } else {
+                dest_ip.into()
+            };
+            if let Some(cipher) = cipher.as_ref() {
+                send_packet.resize(payload_len + cipher.reserved_len(), 0);
+                if let Err(e) = cipher.encrypt(gen_salt(&self_id, &dest_id), &mut send_packet) {
+                    log::warn!("encrypt,{dest_ip:?} {e:?}");
+                    continue;
+                }
+            }
+            if let Err(e) = pipe_writer.send_packet_to(send_packet, &dest_id).await {
+                log::debug!("discard,{dest_ip:?}:{:?} {e:?}", dest_id.as_ref())
+            }
+        }
+    }
+}
+#[cfg(not(target_os = "linux"))]
+async fn tun_send(
+    mut receiver: Receiver<RecvUserData>,
+    cipher: Option<cipher::Cipher>,
+    device: Arc<AsyncDevice>,
+) {
+    while let Ok(mut buf) = receiver.recv().await {
+        if let Some(cipher) = cipher.as_ref() {
+            match cipher.decrypt(gen_salt(&buf.src_id(), &buf.dest_id()), buf.payload_mut()) {
+                Ok(len) => {
+                    if let Err(e) = device.send(&buf.payload()[..len]).await {
+                        log::warn!("device.send {e:?}")
+                    }
+                }
+                Err(e) => {
+                    log::warn!("decrypt {e:?},{:?}->{:?}", buf.src_id(), buf.dest_id())
+                }
+            }
+        } else if let Err(e) = device.send(buf.payload()).await {
+            log::warn!("device.send {e:?}")
+        }
+    }
+}
+#[cfg(not(target_os = "linux"))]
+async fn tun_recv(
+    pipe_writer: &Arc<PipeWriter>,
+    device: Arc<AsyncDevice>,
+    self_ip: Ipv4Addr,
+    external_route: ExternalRoute,
+    cipher: Option<cipher::Cipher>,
+    _mtu: u16,
 ) -> anyhow::Result<()> {
     let self_id: NodeID = self_ip.into();
     loop {
