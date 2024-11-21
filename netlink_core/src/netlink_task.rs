@@ -5,7 +5,6 @@ use rustp2p::{
     pipe::{Pipe, PipeLine, PipeWriter, RecvError, RecvUserData},
     protocol::node_id::NodeID,
 };
-use std::collections::VecDeque;
 use std::{net::Ipv4Addr, sync::Arc};
 use tun_rs::{AbstractDevice, AsyncDevice};
 
@@ -14,6 +13,10 @@ use crate::config::Config;
 use crate::route::ExternalRoute;
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use crate::route::{exit_route, route_listen};
+#[cfg(target_os = "linux")]
+use bytes::BytesMut;
+#[cfg(target_os = "linux")]
+use tachyonix::TryRecvError;
 use tachyonix::{channel, Receiver, Sender};
 
 pub async fn start_netlink(
@@ -69,7 +72,7 @@ async fn start_netlink0(
     let mut pipe = Pipe::new(pipe_config).boxed().await?;
     let writer = Arc::new(pipe.writer());
 
-    let (sender, mut receiver) = channel::<RecvUserData>(256);
+    let (sender, receiver) = channel::<RecvUserData>(256);
     let mut external_route_op = None;
     #[cfg(unix)]
     assert!(tun_fd.is_none() || config.prefix > 0, "configuration error");
@@ -167,7 +170,7 @@ async fn start_netlink0(
         }));
         let cipher = config.cipher.clone();
         tokio::spawn(shutdown_manager.wrap_cancel(async move {
-            tun_send(receiver, cipher, device).await;
+            tun_send(receiver, cipher, device, mtu).await;
         }));
     }
     log::info!("listen local port: {}", config.port);
@@ -224,26 +227,55 @@ async fn tun_send(
     mut receiver: Receiver<RecvUserData>,
     cipher: Option<cipher::Cipher>,
     device: Arc<AsyncDevice>,
+    _mtu: u16,
 ) {
-    todo!()
-    // let mut table = tun_rs::platform::GROTable::default();
-    // while let Ok(mut buf) = receiver.recv().await {
-    //     if let Some(cipher) = cipher.as_ref() {
-    //         match cipher.decrypt(gen_salt(&buf.src_id(), &buf.dest_id()), buf.payload_mut())
-    //         {
-    //             Ok(len) => {
-    //                 if let Err(e) = device.send(&buf.payload()[..len]).await {
-    //                     log::warn!("device.send {e:?}")
-    //                 }
-    //             }
-    //             Err(e) => {
-    //                 log::warn!("decrypt {e:?},{:?}->{:?}", buf.src_id(), buf.dest_id())
-    //             }
-    //         }
-    //     } else if let Err(e) = device.send(buf.payload()).await {
-    //         log::warn!("device.send {e:?}")
-    //     }
-    // }
+    let mut table = tun_rs::platform::GROTable::default();
+    let mut bufs = Vec::with_capacity(16);
+
+    while let Ok(mut buf) = receiver.recv().await {
+        loop {
+            let payload;
+            if let Some(cipher) = cipher.as_ref() {
+                match cipher.decrypt(gen_salt(&buf.src_id(), &buf.dest_id()), buf.payload_mut()) {
+                    Ok(len) => {
+                        payload = &buf.payload()[..len];
+                    }
+                    Err(e) => {
+                        log::warn!("decrypt {e:?},{:?}->{:?}", buf.src_id(), buf.dest_id());
+                        break;
+                    }
+                }
+            } else {
+                payload = buf.payload();
+            }
+            // Use memory pool
+            let mut bytes_mut = BytesMut::with_capacity(2048);
+            bytes_mut.resize(tun_rs::platform::VIRTIO_NET_HDR_LEN, 0);
+            bytes_mut.extend_from_slice(payload);
+            bufs.push(bytes_mut);
+            if bufs.len() == 16 {
+                break;
+            }
+            match receiver.try_recv() {
+                Ok(new_buf) => buf = new_buf,
+                Err(e) => match e {
+                    TryRecvError::Empty => break,
+                    TryRecvError::Closed => {
+                        return;
+                    }
+                },
+            }
+        }
+        if !bufs.is_empty() {
+            if let Err(e) = device
+                .send_multiple(&mut table, &mut bufs, tun_rs::platform::VIRTIO_NET_HDR_LEN)
+                .await
+            {
+                log::warn!("device.send_multiple {e:?}")
+            }
+            bufs.clear();
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -253,25 +285,37 @@ async fn tun_recv(
     self_ip: Ipv4Addr,
     external_route: ExternalRoute,
     cipher: Option<cipher::Cipher>,
-    mtu: u16,
+    _mtu: u16,
 ) -> anyhow::Result<()> {
     let self_id: NodeID = self_ip.into();
     let mut original_buffer = vec![0; tun_rs::platform::VIRTIO_NET_HDR_LEN + 65535];
-    let num = 65535 / mtu as usize + 1;
-    let mut bufs = VecDeque::with_capacity(num);
+    let num = 64;
+    let mut bufs = Vec::with_capacity(num);
     let mut sizes = vec![0; num];
 
     loop {
         while bufs.len() < num {
             let mut send_packet = pipe_writer.allocate_send_packet();
             unsafe { send_packet.set_payload_len(send_packet.capacity()) };
-            bufs.push_back(send_packet);
+            bufs.push(send_packet);
         }
         let num = device
             .recv_multiple(&mut original_buffer, &mut bufs, &mut sizes, 0)
-            .await?;
-        for i in 0..num {
-            let mut send_packet = bufs.pop_front().unwrap();
+            .await;
+        let num = match num {
+            Ok(num) => num,
+            Err(e) => {
+                if let Some(code) = e.raw_os_error() {
+                    if libc::EBADFD == code {
+                        return Err(e)?;
+                    }
+                }
+                log::info!("tun_recv {e:?}");
+                continue;
+            }
+        };
+        let drain = bufs.drain(0..num);
+        for (i, mut send_packet) in drain.enumerate() {
             let payload_len = sizes[i];
             unsafe { send_packet.set_payload_len(payload_len) };
             let buf: &mut [u8] = &mut send_packet;
@@ -326,6 +370,7 @@ async fn tun_send(
     mut receiver: Receiver<RecvUserData>,
     cipher: Option<cipher::Cipher>,
     device: Arc<AsyncDevice>,
+    _mtu: u16,
 ) {
     while let Ok(mut buf) = receiver.recv().await {
         if let Some(cipher) = cipher.as_ref() {

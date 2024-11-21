@@ -15,8 +15,8 @@ crate-type = [
 [dependencies]
 anyhow = "1"
 serde = { version = "1.0", features = ["derive"] }
-rustp2p = { version = "0.1", features = ["chacha20-poly1305", "aes-gcm"] }
-#rustp2p = { git = "https://github.com/rustp2p/rustp2p.git", features = ["chacha20-poly1305", "aes-gcm"] }
+#rustp2p = { version = "0.1", features = ["chacha20-poly1305", "aes-gcm"] }
+rustp2p = { git = "https://github.com/rustp2p/rustp2p.git", features = ["chacha20-poly1305", "aes-gcm"] }
 
 libc = "0.2"
 parking_lot = "0.12"
@@ -27,9 +27,10 @@ tokio = { version = "1.41", features = ["full"] }
 futures = "0.3"
 
 #tun-rs = { version = "1", features = ["async"] }
-tun-rs = {git = "https://github.com/xmh0511/tun-rs",features = ["async"]}
+tun-rs = {git = "https://github.com/vnt-dev/rust-tun",branch = "offload",features = ["async"]}
 pnet_packet = "0.35"
 tachyonix = "0.3"
+bytes = "1.8.0"
 [target.'cfg(any(target_os = "linux", target_os = "macos",target_os = "windows"))'.dependencies]
 net-route = "0.4"
 
