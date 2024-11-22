@@ -1,7 +1,7 @@
 workspace = { members = ["netlink_core", "netlink_http"] }
 [package]
 name = "net_link"
-version = "0.2.7"
+version = "0.2.8"
 edition = "2021"
 license = "Apache-2.0"
 readme = "README.md"
