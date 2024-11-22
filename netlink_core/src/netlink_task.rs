@@ -107,11 +107,12 @@ async fn start_netlink0(
             }
 
             let device = tun_rs::create_as_async(&dev_config)?;
-            let v6 = config.node_ipv6;
-            if let Err(e) = device.add_address_v6(v6.into(), config.prefix_v6) {
-                log::warn!("add ipv6 failed. {e:?},v6={v6}");
-            } else {
-                log::info!("mapped ipv6 addr={v6}");
+            if let Some(v6) = config.node_ipv6 {
+                if let Err(e) = device.add_address_v6(v6.into(), config.prefix_v6) {
+                    log::warn!("add ipv6 failed. {e:?},v6={v6}");
+                } else {
+                    log::info!("mapped ipv6 addr={v6}");
+                }
             }
             device
         };

@@ -4,7 +4,7 @@ use parking_lot::Mutex;
 
 use netlink_core::api::entity::{GroupItem, NetworkNatInfo, RouteItem};
 use netlink_core::api::NetLinkCoreApi;
-use netlink_core::config::Config;
+use netlink_core::config::{Config, ConfigBuilder};
 
 #[derive(Clone, Default)]
 pub struct ApiService {
@@ -24,12 +24,13 @@ impl ApiService {
         self.config.lock().as_ref().map(|(v, _)| v.clone())
     }
     pub fn update_config(&self, config_view: Config) -> anyhow::Result<()> {
+        let config_ = ConfigBuilder::from(config_view).build()?;
         let mut guard = self.config.lock();
         if let Some((config, epoch)) = guard.as_mut() {
-            *config = config_view;
+            *config = config_;
             *epoch += *epoch;
         } else {
-            guard.replace((config_view, 1));
+            guard.replace((config_, 1));
         }
         Ok(())
     }

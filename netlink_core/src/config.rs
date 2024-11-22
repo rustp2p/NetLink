@@ -41,7 +41,7 @@ pub struct Config {
     pub(crate) listen_route: bool,
     pub(crate) config_name: Option<String>,
     pub(crate) node_ipv4: Ipv4Addr,
-    pub(crate) node_ipv6: Ipv6Addr,
+    pub(crate) node_ipv6: Option<Ipv6Addr>,
     pub(crate) prefix: u8,
     pub(crate) prefix_v6: u8,
     pub(crate) tun_name: Option<String>,
@@ -83,7 +83,28 @@ pub struct ConfigBuilder {
     udp_stun: Option<Vec<String>>,
     tcp_stun: Option<Vec<String>>,
 }
-
+impl From<Config> for ConfigBuilder {
+    fn from(value: Config) -> Self {
+        ConfigBuilder::new()
+            .listen_route(value.listen_route)
+            .config_name(value.config_name)
+            .node_ipv4(value.node_ipv4)
+            .node_ipv6(value.node_ipv6)
+            .prefix(value.prefix)
+            .prefix_v6(value.prefix_v6)
+            .tun_name(value.tun_name)
+            .encrypt(value.encrypt)
+            .algorithm(value.algorithm)
+            .port(value.port)
+            .group_code(value.group_code)
+            .peer(value.peer)
+            .bind_dev_name(value.bind_dev_name)
+            .exit_node(value.exit_node)
+            .mtu(value.mtu)
+            .udp_stun(value.udp_stun)
+            .tcp_stun(value.tcp_stun)
+    }
+}
 impl ConfigBuilder {
     pub fn new() -> Self {
         Default::default()
@@ -172,7 +193,10 @@ impl ConfigBuilder {
         self.exit_node = exit_node;
         self
     }
-
+    pub fn mtu(mut self, mtu: Option<u16>) -> Self {
+        self.mtu = mtu;
+        self
+    }
     pub fn udp_stun(mut self, udp_stun: Vec<String>) -> Self {
         self.udp_stun = Some(udp_stun);
         self
@@ -236,7 +260,7 @@ impl ConfigBuilder {
             listen_route: self.listen_route.unwrap_or(true),
             config_name: self.config_name,
             node_ipv4,
-            node_ipv6,
+            node_ipv6: Some(node_ipv6),
             prefix: self.prefix.context("prefix is required")?,
             prefix_v6,
             tun_name: self.tun_name,
