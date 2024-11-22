@@ -14,8 +14,6 @@ use crate::route::ExternalRoute;
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use crate::route::{exit_route, route_listen};
 #[cfg(target_os = "linux")]
-use bytes::BytesMut;
-#[cfg(target_os = "linux")]
 use tachyonix::TryRecvError;
 use tachyonix::{channel, Receiver, Sender};
 
@@ -223,41 +221,75 @@ async fn line_recv(mut line: PipeLine, sender: Sender<RecvUserData>) {
     }
 }
 #[cfg(target_os = "linux")]
+struct Buffer(RecvUserData);
+#[cfg(target_os = "linux")]
+impl AsRef<[u8]> for Buffer {
+    fn as_ref(&self) -> &[u8] {
+        self.0.original_bytes()
+    }
+}
+#[cfg(target_os = "linux")]
+impl AsMut<[u8]> for Buffer {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.0.original_bytes_mut()
+    }
+}
+#[cfg(target_os = "linux")]
+impl tun_rs::platform::ExpandBuffer for Buffer {
+    fn buf_capacity(&self) -> usize {
+        self.0.original_bytes().capacity()
+    }
+
+    fn buf_resize(&mut self, new_len: usize, value: u8) {
+        self.0.original_bytes_mut().resize(new_len, value)
+    }
+
+    fn buf_extend_from_slice(&mut self, extend: &[u8]) {
+        self.0.original_bytes_mut().extend_from_slice(extend)
+    }
+}
+#[cfg(target_os = "linux")]
 async fn tun_send(
     mut receiver: Receiver<RecvUserData>,
     cipher: Option<cipher::Cipher>,
     device: Arc<AsyncDevice>,
-    _mtu: u16,
+    mtu: u16,
 ) {
+    log::info!("vnet_hdr={},udp_gso={}", device.tcp_gso(), device.udp_gso());
+    if !device.tcp_gso() {
+        tun_send0(receiver, cipher, device, mtu).await;
+        return;
+    }
     let mut table = tun_rs::platform::GROTable::default();
     let mut bufs = Vec::with_capacity(16);
 
-    while let Ok(mut buf) = receiver.recv().await {
+    while let Ok(data) = receiver.recv().await {
+        let offset = data.offset();
+        let mut op = Some(data);
         loop {
-            let payload;
+            let mut data = op.take().unwrap();
+            assert_eq!(offset, data.offset());
             if let Some(cipher) = cipher.as_ref() {
-                match cipher.decrypt(gen_salt(&buf.src_id(), &buf.dest_id()), buf.payload_mut()) {
+                match cipher.decrypt(
+                    gen_salt(&data.src_id(), &data.dest_id()),
+                    data.payload_mut(),
+                ) {
                     Ok(len) => {
-                        payload = &buf.payload()[..len];
+                        data.original_bytes_mut().truncate(offset + len);
                     }
                     Err(e) => {
-                        log::warn!("decrypt {e:?},{:?}->{:?}", buf.src_id(), buf.dest_id());
+                        log::warn!("decrypt {e:?},{:?}->{:?}", data.src_id(), data.dest_id());
                         break;
                     }
                 }
-            } else {
-                payload = buf.payload();
             }
-            // Use memory pool
-            let mut bytes_mut = BytesMut::with_capacity(2048);
-            bytes_mut.resize(tun_rs::platform::VIRTIO_NET_HDR_LEN, 0);
-            bytes_mut.extend_from_slice(payload);
-            bufs.push(bytes_mut);
+            let buffer = Buffer(data);
+            bufs.push(buffer);
             if bufs.len() == 16 {
                 break;
             }
             match receiver.try_recv() {
-                Ok(new_buf) => buf = new_buf,
+                Ok(new_buf) => _ = op.replace(new_buf),
                 Err(e) => match e {
                     TryRecvError::Empty => break,
                     TryRecvError::Closed => {
@@ -267,10 +299,7 @@ async fn tun_send(
             }
         }
         if !bufs.is_empty() {
-            if let Err(e) = device
-                .send_multiple(&mut table, &mut bufs, tun_rs::platform::VIRTIO_NET_HDR_LEN)
-                .await
-            {
+            if let Err(e) = device.send_multiple(&mut table, &mut bufs, offset).await {
                 log::warn!("device.send_multiple {e:?}")
             }
             bufs.clear();
@@ -285,8 +314,11 @@ async fn tun_recv(
     self_ip: Ipv4Addr,
     external_route: ExternalRoute,
     cipher: Option<cipher::Cipher>,
-    _mtu: u16,
+    mtu: u16,
 ) -> anyhow::Result<()> {
+    if !device.tcp_gso() {
+        return tun_recv0(pipe_writer, device, self_ip, external_route, cipher, mtu).await;
+    }
     let self_id: NodeID = self_ip.into();
     let mut original_buffer = vec![0; tun_rs::platform::VIRTIO_NET_HDR_LEN + 65535];
     let num = 64;
@@ -367,6 +399,14 @@ async fn tun_recv(
 }
 #[cfg(not(target_os = "linux"))]
 async fn tun_send(
+    receiver: Receiver<RecvUserData>,
+    cipher: Option<cipher::Cipher>,
+    device: Arc<AsyncDevice>,
+    mtu: u16,
+) {
+    tun_send0(receiver, cipher, device, mtu).await;
+}
+async fn tun_send0(
     mut receiver: Receiver<RecvUserData>,
     cipher: Option<cipher::Cipher>,
     device: Arc<AsyncDevice>,
@@ -391,6 +431,16 @@ async fn tun_send(
 }
 #[cfg(not(target_os = "linux"))]
 async fn tun_recv(
+    pipe_writer: &Arc<PipeWriter>,
+    device: Arc<AsyncDevice>,
+    self_ip: Ipv4Addr,
+    external_route: ExternalRoute,
+    cipher: Option<cipher::Cipher>,
+    mtu: u16,
+) -> anyhow::Result<()> {
+    tun_recv0(pipe_writer, device, self_ip, external_route, cipher, mtu).await
+}
+async fn tun_recv0(
     pipe_writer: &Arc<PipeWriter>,
     device: Arc<AsyncDevice>,
     self_ip: Ipv4Addr,
@@ -459,7 +509,6 @@ async fn tun_recv(
         }
     }
 }
-
 #[cfg(target_os = "macos")]
 async fn process_myself(payload: &[u8], device: &Arc<AsyncDevice>) -> anyhow::Result<()> {
     use pnet_packet::icmp::IcmpTypes;
