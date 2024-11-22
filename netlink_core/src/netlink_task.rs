@@ -49,6 +49,7 @@ async fn start_netlink0(
     let mut pipe_config = PipeConfig::empty()
         .set_udp_pipe_config(udp_config)
         .set_tcp_pipe_config(tcp_config)
+        .set_recycle_buf_cap(256)
         .set_direct_addrs(
             config
                 .peer
@@ -57,8 +58,9 @@ async fn start_netlink0(
                 .map(|v| v.0)
                 .collect(),
         )
-        .set_recv_buffer_size(512 + mtu as usize)
-        .set_send_buffer_size(512 + mtu as usize)
+        // largest possible UDP datagram
+        .set_recv_buffer_size(u16::MAX as usize)
+        .set_send_buffer_size(2048)
         .set_group_code(config.group_code.0)
         .set_node_id(config.node_ipv4.into())
         .set_udp_stun_servers(config.udp_stun)
@@ -262,7 +264,7 @@ async fn tun_send(
         return;
     }
     let mut table = tun_rs::platform::GROTable::default();
-    let mut bufs = Vec::with_capacity(16);
+    let mut bufs = Vec::with_capacity(tun_rs::platform::IDEAL_BATCH_SIZE);
 
     while let Ok(data) = receiver.recv().await {
         let offset = data.offset();
@@ -286,7 +288,7 @@ async fn tun_send(
             }
             let buffer = Buffer(data);
             bufs.push(buffer);
-            if bufs.len() == 16 {
+            if bufs.len() == bufs.capacity() {
                 break;
             }
             match receiver.try_recv() {
@@ -322,12 +324,12 @@ async fn tun_recv(
     }
     let self_id: NodeID = self_ip.into();
     let mut original_buffer = vec![0; tun_rs::platform::VIRTIO_NET_HDR_LEN + 65535];
-    let num = 64;
-    let mut bufs = Vec::with_capacity(num);
-    let mut sizes = vec![0; num];
+    use tun_rs::platform::IDEAL_BATCH_SIZE;
+    let mut bufs = Vec::with_capacity(IDEAL_BATCH_SIZE);
+    let mut sizes = vec![0; IDEAL_BATCH_SIZE];
 
     loop {
-        while bufs.len() < num {
+        while bufs.len() < IDEAL_BATCH_SIZE {
             let mut send_packet = pipe_writer.allocate_send_packet();
             unsafe { send_packet.set_payload_len(send_packet.capacity()) };
             bufs.push(send_packet);
