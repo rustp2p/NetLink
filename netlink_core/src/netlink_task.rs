@@ -343,7 +343,7 @@ async fn tun_recv(
                         return Err(e)?;
                     }
                 }
-                log::info!("tun_recv {e:?}");
+                log::warn!("tun_recv {e:?}");
                 continue;
             }
         };
