@@ -327,13 +327,12 @@ async fn tun_recv(
     use tun_rs::platform::IDEAL_BATCH_SIZE;
     let mut bufs = Vec::with_capacity(IDEAL_BATCH_SIZE);
     let mut sizes = vec![0; IDEAL_BATCH_SIZE];
-
+    while bufs.len() < IDEAL_BATCH_SIZE {
+        let mut send_packet = pipe_writer.allocate_send_packet();
+        unsafe { send_packet.set_payload_len(send_packet.capacity()) };
+        bufs.push(send_packet);
+    }
     loop {
-        while bufs.len() < IDEAL_BATCH_SIZE {
-            let mut send_packet = pipe_writer.allocate_send_packet();
-            unsafe { send_packet.set_payload_len(send_packet.capacity()) };
-            bufs.push(send_packet);
-        }
         let num = device
             .recv_multiple(&mut original_buffer, &mut bufs, &mut sizes, 0)
             .await;
@@ -349,8 +348,11 @@ async fn tun_recv(
                 continue;
             }
         };
-        let drain = bufs.drain(0..num);
-        for (i, mut send_packet) in drain.enumerate() {
+
+        for i in 0..num {
+            let mut new_packet = pipe_writer.allocate_send_packet();
+            unsafe { new_packet.set_payload_len(new_packet.capacity()) };
+            let mut send_packet = std::mem::replace(&mut bufs[i], new_packet);
             let payload_len = sizes[i];
             unsafe { send_packet.set_payload_len(payload_len) };
             let buf: &mut [u8] = &mut send_packet;
