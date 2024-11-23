@@ -201,8 +201,9 @@ fn gen_salt(src_id: &NodeID, dest_id: &NodeID) -> [u8; 12] {
 }
 
 async fn line_recv(mut line: PipeLine, sender: Sender<RecvUserData>) {
+    let mut list = Vec::with_capacity(16);
     loop {
-        let rs = match line.next().await {
+        let rs = match line.recv_multi(&mut list).await {
             Ok(rs) => rs,
             Err(e) => {
                 if let RecvError::Io(e) = e {
@@ -211,15 +212,15 @@ async fn line_recv(mut line: PipeLine, sender: Sender<RecvUserData>) {
                 return;
             }
         };
-        let handle_rs = match rs {
-            Ok(handle_rs) => handle_rs,
-            Err(e) => {
-                log::warn!("recv_data_handle {e:?} {:?}", line.remote_addr());
-                continue;
+        if let Err(e) = rs {
+            log::warn!("recv_data_handle {e:?} {:?}", line.remote_addr());
+            continue;
+        }
+
+        for data in list.drain(..) {
+            if sender.send(data).await.is_err() {
+                break;
             }
-        };
-        if sender.send(handle_rs).await.is_err() {
-            log::warn!("discard UserData ")
         }
     }
 }
