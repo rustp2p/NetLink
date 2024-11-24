@@ -46,7 +46,9 @@ impl NetLinkCoreApi {
             external_route,
         })
     }
-    pub fn close(self) {}
+    pub fn close(self) {
+        self.shutdown();
+    }
     pub fn shutdown(&self) {
         _ = self.pipe.shutdown();
         _ = self.shutdown_manager.trigger_shutdown(());
