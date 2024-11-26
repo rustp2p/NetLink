@@ -26,8 +26,8 @@ log = "0.4"
 tokio = { version = "1.41", features = ["full"] }
 futures = "0.3"
 
-#tun-rs = { version = "1", features = ["async"] }
-tun-rs = {git = "https://github.com/vnt-dev/rust-tun",branch = "offload",features = ["async"]}
+tun-rs = { version = "1", features = ["async"] }
+
 pnet_packet = "0.35"
 tachyonix = "0.3"
 bytes = "1.8.0"
@@ -39,4 +39,4 @@ net-route = "0.4"
 
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows-sys = { version = "0.59",features = ["Win32_NetworkManagement_Ndis"] }
+windows-sys = { version = "0.59", features = ["Win32_NetworkManagement_Ndis"] }
