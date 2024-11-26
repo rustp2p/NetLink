@@ -1,5 +1,8 @@
 use async_shutdown::ShutdownManager;
 use futures::FutureExt;
+use regex::Regex;
+use rustp2p::config::DataInterceptor;
+use rustp2p::pipe::RecvResult;
 use rustp2p::{
     config::{PipeConfig, TcpPipeConfig, UdpPipeConfig},
     pipe::{Pipe, PipeLine, PipeWriter, RecvError, RecvUserData},
@@ -9,7 +12,7 @@ use std::{net::Ipv4Addr, sync::Arc};
 use tun_rs::{AbstractDevice, AsyncDevice};
 
 use crate::cipher;
-use crate::config::Config;
+use crate::config::{Config, GroupCode};
 use crate::route::ExternalRoute;
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use crate::route::{exit_route, route_listen};
@@ -43,6 +46,19 @@ async fn start_netlink0(
     config: Config,
     #[cfg(unix)] tun_fd: Option<u32>,
 ) -> anyhow::Result<(Arc<PipeWriter>, Option<ExternalRoute>)> {
+    let config_attach = config.generate()?;
+
+    let group_code_filter = config.group_code_filter.unwrap_or_default();
+    let group_code_filter_regex = config.group_code_filter_regex.unwrap_or_default();
+    let interceptor = if !group_code_filter.is_empty() || !group_code_filter_regex.is_empty() {
+        Some(GroupCodeInterceptor::new(
+            config.group_code,
+            group_code_filter,
+            group_code_filter_regex,
+        )?)
+    } else {
+        None
+    };
     let mtu = config.mtu.unwrap_or(1400);
     let udp_config = UdpPipeConfig::default().set_simple_udp_port(config.port);
     let tcp_config = TcpPipeConfig::default().set_tcp_port(config.port);
@@ -65,7 +81,7 @@ async fn start_netlink0(
         .set_node_id(config.node_ipv4.into())
         .set_udp_stun_servers(config.udp_stun)
         .set_tcp_stun_servers(config.tcp_stun);
-    if let Some(iface) = config.iface_option {
+    if let Some(iface) = config_attach.iface_option {
         pipe_config = pipe_config.set_default_interface(iface);
     }
 
@@ -150,7 +166,7 @@ async fn start_netlink0(
         }
         let device = Arc::new(device);
         let device_r = device.clone();
-        let cipher = config.cipher.clone();
+        let cipher = config_attach.cipher.clone();
         let pipe_writer = writer.clone();
         let shutdown_manager_ = shutdown_manager.clone();
         tokio::spawn(shutdown_manager.wrap_cancel(async move {
@@ -169,7 +185,7 @@ async fn start_netlink0(
             _ = pipe_writer.shutdown();
             _ = shutdown_manager_.trigger_shutdown(());
         }));
-        let cipher = config.cipher.clone();
+        let cipher = config_attach.cipher.clone();
         tokio::spawn(shutdown_manager.wrap_cancel(async move {
             tun_send(receiver, cipher, device, mtu).await;
         }));
@@ -180,7 +196,7 @@ async fn start_netlink0(
         loop {
             match pipe.accept().await {
                 Ok(line) => {
-                    tokio::spawn(line_recv(line, sender.clone()));
+                    tokio::spawn(line_recv(line, sender.clone(), interceptor.clone()));
                 }
                 Err(e) => {
                     log::error!("pipe.accept {e:?}");
@@ -199,11 +215,65 @@ fn gen_salt(src_id: &NodeID, dest_id: &NodeID) -> [u8; 12] {
     res[4..8].copy_from_slice(dest_id.as_ref());
     res
 }
-
-async fn line_recv(mut line: PipeLine, sender: Sender<RecvUserData>) {
+#[derive(Clone)]
+struct GroupCodeInterceptor {
+    group_code: GroupCode,
+    group_code_filter: Vec<String>,
+    group_code_filter_regex: Vec<Regex>,
+}
+impl GroupCodeInterceptor {
+    pub fn new(
+        group_code: GroupCode,
+        group_code_filter: Vec<String>,
+        group_code_filter_regex: Vec<String>,
+    ) -> anyhow::Result<Self> {
+        let mut list = Vec::with_capacity(group_code_filter_regex.len());
+        for x in group_code_filter_regex {
+            list.push(Regex::new(&x)?);
+        }
+        Ok(Self {
+            group_code,
+            group_code_filter,
+            group_code_filter_regex: list,
+        })
+    }
+}
+#[async_trait::async_trait]
+impl DataInterceptor for GroupCodeInterceptor {
+    async fn pre_handle(&self, data: &mut RecvResult) -> bool {
+        if let Ok(packet) = data.net_packet() {
+            let group_code = packet.group_code();
+            if group_code == self.group_code.0.as_ref() {
+                return false;
+            }
+            if let Ok(group_code) = std::str::from_utf8(group_code) {
+                for x in &self.group_code_filter {
+                    if x == group_code {
+                        return false;
+                    }
+                }
+                for x in &self.group_code_filter_regex {
+                    if x.is_match(group_code) {
+                        return false;
+                    }
+                }
+            }
+        }
+        // intercept
+        true
+    }
+}
+async fn line_recv(
+    mut line: PipeLine,
+    sender: Sender<RecvUserData>,
+    interceptor: Option<GroupCodeInterceptor>,
+) {
     let mut list = Vec::with_capacity(16);
     loop {
-        let rs = match line.recv_multi(&mut list).await {
+        let rs = match line
+            .recv_multi_process(interceptor.as_ref(), &mut list)
+            .await
+        {
             Ok(rs) => rs,
             Err(e) => {
                 if let RecvError::Io(e) = e {

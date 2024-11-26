@@ -29,9 +29,11 @@ const TCP_STUN: [&str; 3] = [
 pub fn default_algorithm() -> String {
     DEFAULT_ALGORITHM.to_string()
 }
+
 pub fn default_udp_stun() -> Vec<String> {
     UDP_STUN.iter().map(|v| v.to_string()).collect()
 }
+
 pub fn default_tcp_stun() -> Vec<String> {
     TCP_STUN.iter().map(|v| v.to_string()).collect()
 }
@@ -45,22 +47,60 @@ pub struct Config {
     pub(crate) prefix: u8,
     pub(crate) prefix_v6: u8,
     pub(crate) tun_name: Option<String>,
-    #[serde(skip_deserializing)]
-    #[serde(skip_serializing)]
-    pub(crate) cipher: Option<Cipher>,
     pub(crate) encrypt: Option<String>,
     pub(crate) algorithm: Option<String>,
     pub(crate) port: u16,
     pub(crate) group_code: GroupCode,
     pub(crate) peer: Option<Vec<PeerAddress>>,
     pub(crate) bind_dev_name: Option<String>,
-    #[serde(skip_deserializing)]
-    #[serde(skip_serializing)]
-    pub(crate) iface_option: Option<LocalInterface>,
     pub(crate) exit_node: Option<Ipv4Addr>,
     pub(crate) mtu: Option<u16>,
     pub(crate) udp_stun: Vec<String>,
     pub(crate) tcp_stun: Vec<String>,
+    pub(crate) group_code_filter: Option<Vec<String>>,
+    pub(crate) group_code_filter_regex: Option<Vec<String>>,
+}
+
+pub struct ConfigAttach {
+    pub(crate) cipher: Option<Cipher>,
+    pub(crate) iface_option: Option<LocalInterface>,
+}
+
+impl Config {
+    pub fn generate(&self) -> anyhow::Result<ConfigAttach> {
+        let encrypt = self.encrypt.clone();
+        let algorithm = self.algorithm.clone().unwrap_or(default_algorithm());
+        let cipher = match algorithm.to_lowercase().as_str() {
+            "aes-gcm" => encrypt.map(Cipher::new_aes_gcm),
+            "chacha20-poly1305" => encrypt.map(Cipher::new_chacha20_poly1305),
+            "xor" => encrypt.map(Cipher::new_xor),
+            t => Err(anyhow::anyhow!("algorithm error: {t}"))?,
+        };
+        let mut iface_option = None;
+        if let Some(bind_dev_name) = self.bind_dev_name.clone() {
+            if bind_dev_name.is_empty() {
+                Err(anyhow::anyhow!("bind_dev_name is empty"))?
+            }
+            let _bind_dev_index = match crate::platform::dev_name_to_index(&bind_dev_name) {
+                Ok(index) => index,
+                Err(e) => Err(anyhow::anyhow!("bind_dev_name error: {e}"))?,
+            };
+            let iface;
+            #[cfg(not(target_os = "linux"))]
+            {
+                iface = LocalInterface::new(_bind_dev_index);
+            }
+            #[cfg(target_os = "linux")]
+            {
+                iface = LocalInterface::new(bind_dev_name.clone());
+            }
+            iface_option.replace(iface);
+        }
+        Ok(ConfigAttach {
+            cipher,
+            iface_option,
+        })
+    }
 }
 
 #[derive(Default)]
@@ -82,7 +122,10 @@ pub struct ConfigBuilder {
     mtu: Option<u16>,
     udp_stun: Option<Vec<String>>,
     tcp_stun: Option<Vec<String>>,
+    group_code_filter: Option<Vec<String>>,
+    group_code_filter_regex: Option<Vec<String>>,
 }
+
 impl From<Config> for ConfigBuilder {
     fn from(value: Config) -> Self {
         ConfigBuilder::new()
@@ -105,6 +148,7 @@ impl From<Config> for ConfigBuilder {
             .tcp_stun(value.tcp_stun)
     }
 }
+
 impl ConfigBuilder {
     pub fn new() -> Self {
         Default::default()
@@ -206,6 +250,14 @@ impl ConfigBuilder {
         self.tcp_stun = Some(tcp_stun);
         self
     }
+    pub fn group_code_filter(mut self, group_code_filter: Option<Vec<String>>) -> Self {
+        self.group_code_filter = group_code_filter;
+        self
+    }
+    pub fn group_code_filter_regex(mut self, group_code_filter_regex: Option<Vec<String>>) -> Self {
+        self.group_code_filter_regex = group_code_filter_regex;
+        self
+    }
 
     pub fn build(self) -> anyhow::Result<Config> {
         let prefix_v6 = self.prefix_v6.unwrap_or(96);
@@ -227,35 +279,13 @@ impl ConfigBuilder {
             Ipv6Addr::from(v6)
         };
 
-        let encrypt = self.encrypt.clone();
-        let algorithm = self.algorithm.clone().unwrap_or(default_algorithm());
-        let cipher = match algorithm.to_lowercase().as_str() {
-            "aes-gcm" => encrypt.map(Cipher::new_aes_gcm),
-            "chacha20-poly1305" => encrypt.map(Cipher::new_chacha20_poly1305),
-            "xor" => encrypt.map(Cipher::new_xor),
-            t => Err(anyhow::anyhow!("algorithm error: {t}"))?,
-        };
-        let mut iface_option = None;
-        if let Some(bind_dev_name) = self.bind_dev_name.clone() {
-            if bind_dev_name.is_empty() {
-                Err(anyhow::anyhow!("bind_dev_name is empty"))?
+        if let Some(v) = self.group_code_filter_regex.as_ref() {
+            for x in v {
+                if let Err(e) = regex::Regex::new(x) {
+                    Err(anyhow::anyhow!("group_code_filter_regex error: {e}"))?
+                }
             }
-            let _bind_dev_index = match crate::platform::dev_name_to_index(&bind_dev_name) {
-                Ok(index) => index,
-                Err(e) => Err(anyhow::anyhow!("bind_dev_name error: {e}"))?,
-            };
-            let iface;
-            #[cfg(not(target_os = "linux"))]
-            {
-                iface = LocalInterface::new(_bind_dev_index);
-            }
-            #[cfg(target_os = "linux")]
-            {
-                iface = LocalInterface::new(bind_dev_name.clone());
-            }
-            iface_option.replace(iface);
         }
-
         let config = Config {
             listen_route: self.listen_route.unwrap_or(true),
             config_name: self.config_name,
@@ -266,22 +296,23 @@ impl ConfigBuilder {
             tun_name: self.tun_name,
             encrypt: self.encrypt,
             algorithm: self.algorithm,
-            cipher,
             port: self.port.context("port is required")?,
             group_code: self.group_code.context("group_code is required")?,
             peer: self.peer,
             bind_dev_name: self.bind_dev_name,
-            iface_option,
             exit_node: self.exit_node,
             mtu: self.mtu,
             udp_stun: self.udp_stun.unwrap_or(default_udp_stun()),
             tcp_stun: self.tcp_stun.unwrap_or(default_tcp_stun()),
+            group_code_filter: self.group_code_filter,
+            group_code_filter_regex: self.group_code_filter_regex,
         };
+        _ = config.generate()?;
         Ok(config)
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct GroupCode(pub rustp2p::protocol::node_id::GroupCode);
 
 impl Display for GroupCode {
@@ -349,6 +380,7 @@ impl Display for PeerAddress {
         std::fmt::Display::fmt(&self.0, f)
     }
 }
+
 impl TryFrom<String> for PeerAddress {
     type Error = anyhow::Error;
 
@@ -356,6 +388,7 @@ impl TryFrom<String> for PeerAddress {
         PeerAddress::from_str(&value)
     }
 }
+
 impl FromStr for PeerAddress {
     type Err = anyhow::Error;
 

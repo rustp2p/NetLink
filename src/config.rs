@@ -3,9 +3,9 @@ use std::fmt::Debug;
 use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 
-use netlink_http::{default_tcp_stun, default_udp_stun, Config, ConfigBuilder};
-
 use crate::{DEFAULT_ALGORITHM, LISTEN_PORT};
+use netlink_http::{default_tcp_stun, default_udp_stun, Config, ConfigBuilder};
+use regex::Regex;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct FileConfigView {
@@ -27,9 +27,10 @@ pub struct FileConfigView {
     pub peer: Option<Vec<String>>,
     pub bind_dev_name: Option<String>,
     pub exit_node: Option<String>,
-    pub mtu:Option<u16>,
+    pub mtu: Option<u16>,
     pub udp_stun: Vec<String>,
     pub tcp_stun: Vec<String>,
+    pub group_code_filter: Option<Vec<String>>,
 }
 
 impl FileConfigView {
@@ -49,7 +50,24 @@ impl FileConfigView {
         Ok(())
     }
 }
+pub fn convert_group_filter(src: Option<Vec<String>>) -> anyhow::Result<Option<Vec<String>>> {
+    let mut group_code_filter_regex = Vec::new();
+    if let Some(v) = src {
+        for x in v {
+            if let Err(e) = Regex::new(&x) {
+                Err(anyhow::anyhow!("{e}"))?;
+            } else {
+                group_code_filter_regex.push(x);
+            }
+        }
+    }
 
+    if group_code_filter_regex.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(group_code_filter_regex))
+    }
+}
 impl TryFrom<FileConfigView> for Config {
     type Error = anyhow::Error;
 
@@ -59,6 +77,7 @@ impl TryFrom<FileConfigView> for Config {
         } else {
             None
         };
+        let group_code_filter_regex = convert_group_filter(value.group_code_filter)?;
         let mut builder = ConfigBuilder::new()
             .udp_stun(value.udp_stun)
             .tcp_stun(value.tcp_stun)
@@ -74,6 +93,7 @@ impl TryFrom<FileConfigView> for Config {
             .tun_name(value.tun_name)
             .bind_dev_name(value.bind_dev_name)
             .mtu(value.mtu)
+            .group_code_filter_regex(group_code_filter_regex)
             .peer_str(value.peer)?;
 
         if let Some(exit_node) = value.exit_node {
@@ -107,6 +127,7 @@ impl Default for FileConfigView {
             mtu: None,
             udp_stun: default_udp_stun(),
             tcp_stun: default_tcp_stun(),
+            group_code_filter: None,
         }
     }
 }

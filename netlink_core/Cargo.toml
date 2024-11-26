@@ -31,6 +31,9 @@ tun-rs = {git = "https://github.com/vnt-dev/rust-tun",branch = "offload",feature
 pnet_packet = "0.35"
 tachyonix = "0.3"
 bytes = "1.8.0"
+async-trait = "0.1"
+regex = "1.11"
+
 [target.'cfg(any(target_os = "linux", target_os = "macos",target_os = "windows"))'.dependencies]
 net-route = "0.4"
 

@@ -56,6 +56,9 @@ struct Args {
     /// Set tun mtu
     #[arg(long)]
     mtu: Option<u16>,
+    /// Group code whitelist, supports regular expressions
+    #[arg(short = 'X', long = "filter")]
+    group_code_filter: Option<Vec<String>>,
     /// Start using configuration file
     #[arg(short = 'f', long)]
     config: Option<String>,
@@ -158,6 +161,7 @@ async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
             #[cfg(feature = "web")]
             api_disable,
             mtu,
+            group_code_filter,
             ..
         } = args;
         let mut split = local.split('/');
@@ -168,6 +172,10 @@ async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
         } else {
             0
         };
+        let group_code_filter_regex = config::convert_group_filter(group_code_filter)?;
+        if let Some(v) = group_code_filter_regex.as_ref() {
+            log::info!("group code filter regex:{v:?}");
+        }
         let config = ConfigBuilder::new()
             .group_code(group_code.try_into()?)
             .config_name(Some("cmd".to_string()))
@@ -181,6 +189,7 @@ async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
             .bind_dev_name(bind_dev)
             .exit_node(exit_node)
             .mtu(mtu)
+            .group_code_filter_regex(group_code_filter_regex)
             .build()?;
         #[cfg(feature = "web")]
         let api_addr = if api_disable {
