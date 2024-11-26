@@ -27,7 +27,7 @@ pub struct FileConfigView {
     pub peer: Option<Vec<String>>,
     pub bind_dev_name: Option<String>,
     pub exit_node: Option<String>,
-
+    pub mtu:Option<u16>,
     pub udp_stun: Vec<String>,
     pub tcp_stun: Vec<String>,
 }
@@ -73,6 +73,7 @@ impl TryFrom<FileConfigView> for Config {
             .config_name(Some("file_config".to_string()))
             .tun_name(value.tun_name)
             .bind_dev_name(value.bind_dev_name)
+            .mtu(value.mtu)
             .peer_str(value.peer)?;
 
         if let Some(exit_node) = value.exit_node {
@@ -103,6 +104,7 @@ impl Default for FileConfigView {
             peer: None,
             bind_dev_name: None,
             exit_node: None,
+            mtu: None,
             udp_stun: default_udp_stun(),
             tcp_stun: default_tcp_stun(),
         }

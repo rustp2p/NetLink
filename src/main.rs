@@ -53,6 +53,9 @@ struct Args {
     /// Set tun name
     #[arg(long)]
     tun_name: Option<String>,
+    /// Set tun mtu
+    #[arg(long)]
+    mtu: Option<u16>,
     /// Start using configuration file
     #[arg(short = 'f', long)]
     config: Option<String>,
@@ -154,6 +157,7 @@ async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
             api_addr,
             #[cfg(feature = "web")]
             api_disable,
+            mtu,
             ..
         } = args;
         let mut split = local.split('/');
@@ -176,6 +180,7 @@ async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
             .peer(Some(peer))
             .bind_dev_name(bind_dev)
             .exit_node(exit_node)
+            .mtu(mtu)
             .build()?;
         #[cfg(feature = "web")]
         let api_addr = if api_disable {
