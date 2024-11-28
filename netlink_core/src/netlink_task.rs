@@ -2,7 +2,7 @@ use async_shutdown::ShutdownManager;
 use futures::FutureExt;
 use regex::Regex;
 use rustp2p::config::DataInterceptor;
-use rustp2p::pipe::RecvResult;
+use rustp2p::pipe::{RecvResult, SendPacket};
 use rustp2p::{
     config::{PipeConfig, TcpPipeConfig, UdpPipeConfig},
     pipe::{Pipe, PipeLine, PipeWriter, RecvError, RecvUserData},
@@ -426,49 +426,17 @@ async fn tun_recv(
             let mut send_packet = std::mem::replace(&mut bufs[i], new_packet);
             let payload_len = sizes[i];
             unsafe { send_packet.set_payload_len(payload_len) };
-            let buf: &mut [u8] = &mut send_packet;
-            if buf.len() < 20 {
-                continue;
-            }
-            let mut v6 = false;
-            let mut dest_ip = if buf[0] >> 4 != 4 {
-                if let Some(ipv6_packet) = pnet_packet::ipv6::Ipv6Packet::new(buf) {
-                    let last: [u8; 4] = ipv6_packet.get_destination().octets()[12..]
-                        .try_into()
-                        .unwrap();
-                    v6 = true;
-                    Ipv4Addr::from(last)
-                } else {
-                    continue;
-                }
-            } else {
-                Ipv4Addr::new(buf[16], buf[17], buf[18], buf[19])
-            };
-            if dest_ip.is_unspecified() {
-                continue;
-            }
-            if dest_ip.is_broadcast() || dest_ip.is_multicast() || buf[19] == 255 {
-                if v6 {
-                    continue;
-                }
-                dest_ip = Ipv4Addr::BROADCAST;
-            }
-            let dest_id = if v6 {
-                dest_ip.into()
-            } else if let Some(next_hop) = external_route.route(&dest_ip) {
-                next_hop.into()
-            } else {
-                dest_ip.into()
-            };
-            if let Some(cipher) = cipher.as_ref() {
-                send_packet.resize(payload_len + cipher.reserved_len(), 0);
-                if let Err(e) = cipher.encrypt(gen_salt(&self_id, &dest_id), &mut send_packet) {
-                    log::warn!("encrypt,{dest_ip:?} {e:?}");
-                    continue;
-                }
-            }
-            if let Err(e) = pipe_writer.send_packet_to(send_packet, &dest_id).await {
-                log::debug!("discard,{dest_ip:?}:{:?} {e:?}", dest_id.as_ref())
+            if let Some(send_packet) = tun_recv_handle(
+                &device,
+                &cipher,
+                pipe_writer,
+                &self_id,
+                send_packet,
+                &external_route,
+            )
+            .await
+            {
+                pipe_writer.release_send_packet(send_packet);
             }
         }
     }
@@ -525,65 +493,95 @@ async fn tun_recv0(
     _mtu: u16,
 ) -> anyhow::Result<()> {
     let self_id: NodeID = self_ip.into();
+    let mut packet = Some(pipe_writer.allocate_send_packet());
     loop {
-        let mut send_packet = pipe_writer.allocate_send_packet();
+        let mut send_packet = if let Some(send_packet) = packet.take() {
+            send_packet
+        } else {
+            pipe_writer.allocate_send_packet()
+        };
         unsafe { send_packet.set_payload_len(send_packet.capacity()) };
         let payload_len = device.recv(&mut send_packet).await?;
         unsafe { send_packet.set_payload_len(payload_len) };
-        let buf: &mut [u8] = &mut send_packet;
-        if buf.len() < 20 {
-            continue;
-        }
-        let mut v6 = false;
-        let mut dest_ip = if buf[0] >> 4 != 4 {
-            if let Some(ipv6_packet) = pnet_packet::ipv6::Ipv6Packet::new(buf) {
-                let last: [u8; 4] = ipv6_packet.get_destination().octets()[12..]
-                    .try_into()
-                    .unwrap();
-                v6 = true;
-                Ipv4Addr::from(last)
-            } else {
-                continue;
-            }
+        packet = tun_recv_handle(
+            &device,
+            &cipher,
+            pipe_writer,
+            &self_id,
+            send_packet,
+            &external_route,
+        )
+        .await;
+    }
+}
+async fn tun_recv_handle(
+    _device: &Arc<AsyncDevice>,
+    cipher: &Option<cipher::Cipher>,
+    pipe_writer: &Arc<PipeWriter>,
+    self_id: &NodeID,
+    mut send_packet: SendPacket,
+    external_route: &ExternalRoute,
+) -> Option<SendPacket> {
+    let payload_len = send_packet.len();
+    let buf: &mut [u8] = &mut send_packet;
+    if buf.len() < 20 {
+        return Some(send_packet);
+    }
+    let mut v6 = false;
+    let mut dest_ip = if buf[0] >> 4 != 4 {
+        if let Some(ipv6_packet) = pnet_packet::ipv6::Ipv6Packet::new(buf) {
+            let last: [u8; 4] = ipv6_packet.get_destination().octets()[12..]
+                .try_into()
+                .unwrap();
+            v6 = true;
+            Ipv4Addr::from(last)
         } else {
-            Ipv4Addr::new(buf[16], buf[17], buf[18], buf[19])
-        };
-        if dest_ip.is_unspecified() {
+            return Some(send_packet);
+        }
+    } else {
+        Ipv4Addr::new(buf[16], buf[17], buf[18], buf[19])
+    };
+    if dest_ip.is_unspecified() {
+        return Some(send_packet);
+    }
+
+    if dest_ip.is_broadcast() || dest_ip.is_multicast() {
+        if v6 {
+            return Some(send_packet);
+        }
+        dest_ip = Ipv4Addr::BROADCAST;
+    }
+    if !v6 && buf[19] == 255 {
+        dest_ip = Ipv4Addr::BROADCAST;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let self_ip = Ipv4Addr::from(*self_id);
+        if dest_ip == self_ip {
+            if let Err(err) = process_myself(&buf[..payload_len], &_device).await {
+                log::error!("process myself err: {err:?}");
+            }
             continue;
-        }
-        if dest_ip.is_broadcast() || dest_ip.is_multicast() || buf[19] == 255 {
-            if v6 {
-                continue;
-            }
-            dest_ip = Ipv4Addr::BROADCAST;
-        }
-        #[cfg(target_os = "macos")]
-        {
-            if dest_ip == self_ip {
-                if let Err(err) = process_myself(&buf[..payload_len], &device).await {
-                    log::error!("process myself err: {err:?}");
-                }
-                continue;
-            }
-        }
-        let dest_id = if v6 {
-            dest_ip.into()
-        } else if let Some(next_hop) = external_route.route(&dest_ip) {
-            next_hop.into()
-        } else {
-            dest_ip.into()
-        };
-        if let Some(cipher) = cipher.as_ref() {
-            send_packet.resize(payload_len + cipher.reserved_len(), 0);
-            if let Err(e) = cipher.encrypt(gen_salt(&self_id, &dest_id), &mut send_packet) {
-                log::warn!("encrypt,{dest_ip:?} {e:?}");
-                continue;
-            }
-        }
-        if let Err(e) = pipe_writer.send_packet_to(send_packet, &dest_id).await {
-            log::debug!("discard,{dest_ip:?}:{:?} {e:?}", dest_id.as_ref())
         }
     }
+    let dest_id = if v6 {
+        dest_ip.into()
+    } else if let Some(next_hop) = external_route.route(&dest_ip) {
+        next_hop.into()
+    } else {
+        dest_ip.into()
+    };
+    if let Some(cipher) = cipher.as_ref() {
+        send_packet.resize(payload_len + cipher.reserved_len(), 0);
+        if let Err(e) = cipher.encrypt(gen_salt(self_id, &dest_id), &mut send_packet) {
+            log::warn!("encrypt,{dest_ip:?} {e:?}");
+            return Some(send_packet);
+        }
+    }
+    if let Err(e) = pipe_writer.send_packet_to(send_packet, &dest_id).await {
+        log::debug!("discard,{dest_ip:?}:{:?} {e:?}", dest_id.as_ref())
+    }
+    None
 }
 #[cfg(target_os = "macos")]
 async fn process_myself(payload: &[u8], device: &Arc<AsyncDevice>) -> anyhow::Result<()> {
