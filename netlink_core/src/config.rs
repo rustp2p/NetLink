@@ -40,7 +40,7 @@ pub fn default_tcp_stun() -> Vec<String> {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Config {
-    pub(crate) listen_route: bool,
+    pub(crate) listen_route: Option<bool>,
     pub(crate) config_name: Option<String>,
     pub(crate) node_ipv4: Ipv4Addr,
     pub(crate) node_ipv6: Option<Ipv6Addr>,
@@ -153,8 +153,8 @@ impl ConfigBuilder {
     pub fn new() -> Self {
         Default::default()
     }
-    pub fn listen_route(mut self, listen_route: bool) -> Self {
-        self.listen_route = Some(listen_route);
+    pub fn listen_route(mut self, listen_route: Option<bool>) -> Self {
+        self.listen_route = listen_route;
         self
     }
     pub fn config_name(mut self, config_name: Option<String>) -> Self {
@@ -287,7 +287,7 @@ impl ConfigBuilder {
             }
         }
         let config = Config {
-            listen_route: self.listen_route.unwrap_or(true),
+            listen_route: self.listen_route,
             config_name: self.config_name,
             node_ipv4,
             node_ipv6: Some(node_ipv6),

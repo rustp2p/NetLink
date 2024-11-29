@@ -149,7 +149,7 @@ async fn start_netlink0(
             let name = device.name().unwrap();
             log::info!("device index={if_index},name={name}",);
             #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
-            if config.listen_route {
+            if config.listen_route.unwrap_or(true) {
                 route_listen::route_listen(
                     shutdown_manager.clone(),
                     if_index,
