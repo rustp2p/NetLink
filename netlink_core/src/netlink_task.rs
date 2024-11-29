@@ -561,7 +561,7 @@ async fn tun_recv_handle(
             if let Err(err) = process_myself(&buf[..payload_len], &_device).await {
                 log::error!("process myself err: {err:?}");
             }
-            continue;
+            return Some(send_packet);
         }
     }
     let dest_id = if v6 {
