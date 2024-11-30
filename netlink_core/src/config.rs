@@ -146,6 +146,8 @@ impl From<Config> for ConfigBuilder {
             .mtu(value.mtu)
             .udp_stun(value.udp_stun)
             .tcp_stun(value.tcp_stun)
+            .group_code_filter(value.group_code_filter)
+            .group_code_filter_regex(value.group_code_filter_regex)
     }
 }
 
