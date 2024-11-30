@@ -56,7 +56,7 @@ struct Args {
     /// Set tun mtu
     #[arg(long)]
     mtu: Option<u16>,
-    /// Group code whitelist, supports regular expressions
+    /// Group code whitelist, using regular expressions
     #[arg(short = 'X', long = "filter")]
     filter: Option<Vec<String>>,
     /// Start using configuration file
