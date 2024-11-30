@@ -25,6 +25,7 @@ serde_yaml = "0.9"
 rust-embed = { version = "8.5", features = ["compression", "mime-guess"], optional = true }
 regex = "1.11"
 
+salvo = { version = "=0.63.1", features = ["cors", "anyhow"] }
 
 [features]
 default = ["web"]

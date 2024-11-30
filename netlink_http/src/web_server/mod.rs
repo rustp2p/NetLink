@@ -219,16 +219,28 @@ fn allow_cors() -> CorsHandler {
         .into_handler()
 }
 pub async fn start_api(addr: SocketAddr, api_service: ApiService) -> anyhow::Result<()> {
-    start(addr, api_service, DefaultStaticFileAssets).await
+    start(
+        addr,
+        api_service,
+        Option::<DefaultApiInterceptor>::None,
+        DefaultStaticFileAssets,
+    )
+    .await
 }
 
-pub async fn start<A: StaticFileAssets>(
+pub async fn start<A: StaticFileAssets, I: Handler>(
     addr: SocketAddr,
     api_service: ApiService,
+    api_interceptor: Option<I>,
     static_assets: A,
 ) -> anyhow::Result<()> {
     let acceptor = TcpListener::new(addr).bind().await;
     let router = Router::with_path("api").hoop(allow_cors());
+    let router = if let Some(i) = api_interceptor {
+        router.hoop(i)
+    } else {
+        router
+    };
     let router = router.push(
         Router::with_path("application-info")
             .get(application_info)
@@ -397,5 +409,19 @@ impl Default for ApplicationInfo {
                 "xor".to_string(),
             ],
         }
+    }
+}
+#[derive(Copy, Clone)]
+struct DefaultApiInterceptor;
+#[async_trait]
+impl Handler for DefaultApiInterceptor {
+    async fn handle(
+        &self,
+        req: &mut Request,
+        depot: &mut Depot,
+        res: &mut Response,
+        ctrl: &mut FlowCtrl,
+    ) {
+        ctrl.call_next(req, depot, res).await;
     }
 }

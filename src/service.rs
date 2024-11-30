@@ -55,6 +55,13 @@ impl ApiService {
         }
         Ok(())
     }
+    #[allow(dead_code)]
+    pub async fn save_config(&self) -> anyhow::Result<()> {
+        if let Some(config) = self.load_config() {
+            self.save_config_to_file(config).await?;
+        }
+        Ok(())
+    }
     pub async fn save_config_to_file(&self, config: Config) -> anyhow::Result<()> {
         let json_str = serde_json::to_string(&config)?;
         let path_buf = self.path.join(CONFIG_FILE);

@@ -10,6 +10,8 @@ use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 
 mod config;
+#[cfg(feature = "web")]
+mod interceptor;
 mod service;
 #[cfg(feature = "web")]
 mod static_file;
@@ -242,9 +244,11 @@ async fn start_by_config(
     let api_service = ApiService::new(config).await?;
     #[cfg(feature = "web")]
     if let Some(cmd_server_addr) = cmd_server_addr {
+        let handle = interceptor::ApiInterceptor::new(api_service.clone());
         if let Err(e) = netlink_http::web_server::start(
             cmd_server_addr,
             api_service.inner_api(),
+            Some(handle),
             static_file::StaticAssets,
         )
         .await
