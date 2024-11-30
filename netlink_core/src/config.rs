@@ -10,9 +10,10 @@ use serde::de::Visitor;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::cipher::Cipher;
-
-const DEFAULT_ALGORITHM: &str = "chacha20-poly1305";
-const UDP_STUN: [&str; 6] = [
+pub const NODE_IPV6: u8 = 96;
+pub const MTU: u16 = 1400;
+pub const DEFAULT_ALGORITHM: &str = "chacha20-poly1305";
+pub const UDP_STUN: [&str; 6] = [
     "stun.miwifi.com",
     "stun.chat.bilibili.com",
     "stun.hitv.com",
@@ -20,7 +21,7 @@ const UDP_STUN: [&str; 6] = [
     "stun1.l.google.com:19302",
     "stun2.l.google.com:19302",
 ];
-const TCP_STUN: [&str; 3] = [
+pub const TCP_STUN: [&str; 3] = [
     "stun.flashdance.cx",
     "stun.sipnet.net",
     "stun.nextcloud.com:443",
@@ -45,7 +46,7 @@ pub struct Config {
     pub(crate) node_ipv4: Ipv4Addr,
     pub(crate) node_ipv6: Option<Ipv6Addr>,
     pub(crate) prefix: u8,
-    pub(crate) prefix_v6: u8,
+    pub(crate) prefix_v6: Option<u8>,
     pub(crate) tun_name: Option<String>,
     pub(crate) encrypt: Option<String>,
     pub(crate) algorithm: Option<String>,
@@ -55,8 +56,8 @@ pub struct Config {
     pub(crate) bind_dev_name: Option<String>,
     pub(crate) exit_node: Option<Ipv4Addr>,
     pub(crate) mtu: Option<u16>,
-    pub(crate) udp_stun: Vec<String>,
-    pub(crate) tcp_stun: Vec<String>,
+    pub(crate) udp_stun: Option<Vec<String>>,
+    pub(crate) tcp_stun: Option<Vec<String>>,
     pub(crate) group_code_filter: Option<Vec<GroupCode>>,
     pub(crate) group_code_filter_regex: Option<Vec<String>>,
 }
@@ -178,8 +179,8 @@ impl ConfigBuilder {
         self
     }
 
-    pub fn prefix_v6(mut self, prefix_v6: u8) -> Self {
-        self.prefix_v6 = Some(prefix_v6);
+    pub fn prefix_v6(mut self, prefix_v6: Option<u8>) -> Self {
+        self.prefix_v6 = prefix_v6;
         self
     }
 
@@ -243,13 +244,13 @@ impl ConfigBuilder {
         self.mtu = mtu;
         self
     }
-    pub fn udp_stun(mut self, udp_stun: Vec<String>) -> Self {
-        self.udp_stun = Some(udp_stun);
+    pub fn udp_stun(mut self, udp_stun: Option<Vec<String>>) -> Self {
+        self.udp_stun = udp_stun;
         self
     }
 
-    pub fn tcp_stun(mut self, tcp_stun: Vec<String>) -> Self {
-        self.tcp_stun = Some(tcp_stun);
+    pub fn tcp_stun(mut self, tcp_stun: Option<Vec<String>>) -> Self {
+        self.tcp_stun = tcp_stun;
         self
     }
     pub fn group_code_filter(mut self, group_code_filter: Option<Vec<GroupCode>>) -> Self {
@@ -263,9 +264,11 @@ impl ConfigBuilder {
 
     pub fn build(self) -> anyhow::Result<Config> {
         let node_ipv4 = self.node_ipv4.context("node_ipv4 is required")?;
-        let prefix_v6 = self.prefix_v6.unwrap_or(96);
-        if prefix_v6 > 96 {
-            Err(anyhow::anyhow!("prefix_v6 cannot be greater than 96"))?
+        let prefix_v6 = self.prefix_v6.unwrap_or(NODE_IPV6);
+        if prefix_v6 > NODE_IPV6 {
+            Err(anyhow::anyhow!(
+                "prefix_v6 cannot be greater than {NODE_IPV6}"
+            ))?
         }
         let node_ipv6 = if let Some(node_ipv6) = self.node_ipv6 {
             let mut octets = node_ipv6.octets();
@@ -292,18 +295,18 @@ impl ConfigBuilder {
             node_ipv4,
             node_ipv6: Some(node_ipv6),
             prefix: self.prefix.context("prefix is required")?,
-            prefix_v6,
+            prefix_v6: Some(prefix_v6),
             tun_name: self.tun_name,
             encrypt: self.encrypt,
-            algorithm: self.algorithm,
+            algorithm: Some(self.algorithm.unwrap_or(DEFAULT_ALGORITHM.to_string())),
             port: self.port.context("port is required")?,
             group_code: self.group_code.context("group_code is required")?,
             peer: self.peer,
             bind_dev_name: self.bind_dev_name,
             exit_node: self.exit_node,
-            mtu: self.mtu,
-            udp_stun: self.udp_stun.unwrap_or(default_udp_stun()),
-            tcp_stun: self.tcp_stun.unwrap_or(default_tcp_stun()),
+            mtu: Some(self.mtu.unwrap_or(MTU)),
+            udp_stun: Some(self.udp_stun.unwrap_or(default_udp_stun())),
+            tcp_stun: Some(self.tcp_stun.unwrap_or(default_tcp_stun())),
             group_code_filter: self.group_code_filter,
             group_code_filter_regex: self.group_code_filter_regex,
         };

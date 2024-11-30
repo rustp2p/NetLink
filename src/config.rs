@@ -1,11 +1,13 @@
 use std::fmt::Debug;
 
 use anyhow::{anyhow, Context};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+use netlink_http::{Config, ConfigBuilder};
+
 use crate::{DEFAULT_ALGORITHM, LISTEN_PORT};
-use netlink_http::{default_tcp_stun, default_udp_stun, Config, ConfigBuilder};
-use regex::Regex;
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct FileConfigView {
@@ -19,7 +21,7 @@ pub struct FileConfigView {
     pub node_ipv4: String,
     pub prefix: u8,
     pub node_ipv6: Option<String>,
-    pub prefix_v6: u8,
+    pub prefix_v6: Option<u8>,
     pub tun_name: Option<String>,
     pub encrypt: Option<String>,
     pub algorithm: String,
@@ -28,8 +30,8 @@ pub struct FileConfigView {
     pub bind_dev_name: Option<String>,
     pub exit_node: Option<String>,
     pub mtu: Option<u16>,
-    pub udp_stun: Vec<String>,
-    pub tcp_stun: Vec<String>,
+    pub udp_stun: Option<Vec<String>>,
+    pub tcp_stun: Option<Vec<String>>,
     pub group_code_filter: Option<Vec<String>>,
 }
 
@@ -116,7 +118,7 @@ impl Default for FileConfigView {
             node_ipv4: "".to_string(),
             prefix: 24,
             node_ipv6: None,
-            prefix_v6: 96,
+            prefix_v6: None,
             tun_name: None,
             encrypt: None,
             algorithm: DEFAULT_ALGORITHM.to_string(),
@@ -125,8 +127,8 @@ impl Default for FileConfigView {
             bind_dev_name: None,
             exit_node: None,
             mtu: None,
-            udp_stun: default_udp_stun(),
-            tcp_stun: default_tcp_stun(),
+            udp_stun: None,
+            tcp_stun: None,
             group_code_filter: None,
         }
     }

@@ -12,7 +12,7 @@ use std::{net::Ipv4Addr, sync::Arc};
 use tun_rs::{AbstractDevice, AsyncDevice};
 
 use crate::cipher;
-use crate::config::{Config, GroupCode};
+use crate::config::{default_tcp_stun, default_udp_stun, Config, GroupCode};
 use crate::route::ExternalRoute;
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use crate::route::{exit_route, route_listen};
@@ -55,7 +55,7 @@ async fn start_netlink0(
         group_code_filter,
         group_code_filter_regex,
     )?;
-    let mtu = config.mtu.unwrap_or(1400);
+    let mtu = config.mtu.unwrap_or(crate::config::MTU);
     let udp_config = UdpPipeConfig::default().set_simple_udp_port(config.port);
     let tcp_config = TcpPipeConfig::default().set_tcp_port(config.port);
     let mut pipe_config = PipeConfig::empty()
@@ -75,8 +75,8 @@ async fn start_netlink0(
         .set_send_buffer_size(2048)
         .set_group_code(config.group_code.0)
         .set_node_id(config.node_ipv4.into())
-        .set_udp_stun_servers(config.udp_stun)
-        .set_tcp_stun_servers(config.tcp_stun);
+        .set_udp_stun_servers(config.udp_stun.unwrap_or(default_udp_stun()))
+        .set_tcp_stun_servers(config.tcp_stun.unwrap_or(default_tcp_stun()));
     if let Some(iface) = config_attach.iface_option {
         pipe_config = pipe_config.set_default_interface(iface);
     }
@@ -122,7 +122,10 @@ async fn start_netlink0(
 
             let device = tun_rs::create_as_async(&dev_config)?;
             if let Some(v6) = config.node_ipv6 {
-                if let Err(e) = device.add_address_v6(v6.into(), config.prefix_v6) {
+                if let Err(e) = device.add_address_v6(
+                    v6.into(),
+                    config.prefix_v6.unwrap_or(crate::config::NODE_IPV6),
+                ) {
                     log::warn!("add ipv6 failed. {e:?},v6={v6}");
                 } else {
                     log::info!("mapped ipv6 addr={v6}");
