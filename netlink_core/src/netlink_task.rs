@@ -226,7 +226,7 @@ impl GroupCodeInterceptor {
         if group_code_filter.is_empty() && group_code_filter_regex.is_empty() {
             return Ok(None);
         }
-        let mut filter = Vec::with_capacity(group_code_filter_regex.len());
+        let mut filter = Vec::with_capacity(group_code_filter.len());
         for x in group_code_filter {
             filter.push(GroupCode::try_from(x)?)
         }
