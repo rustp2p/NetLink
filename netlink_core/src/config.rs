@@ -1,7 +1,7 @@
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::net::{Ipv4Addr, Ipv6Addr};
-use std::str::FromStr;
+use std::str::{FromStr, Utf8Error};
 
 use anyhow::Context;
 use rustp2p::config::LocalInterface;
@@ -314,12 +314,25 @@ impl ConfigBuilder {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct GroupCode(pub rustp2p::protocol::node_id::GroupCode);
 
+impl GroupCode {
+    pub fn as_str(&self) -> Result<&str, Utf8Error> {
+        group_code_to_str(&self.0)
+    }
+}
 impl Display for GroupCode {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         std::fmt::Display::fmt(&group_code_to_string(&self.0), f)
+    }
+}
+impl TryFrom<&[u8]> for GroupCode {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        let code = rustp2p::protocol::node_id::GroupCode::try_from(value)?;
+        Ok(Self(code))
     }
 }
 
@@ -456,4 +469,14 @@ pub(crate) fn group_code_to_string(group_code: &rustp2p::protocol::node_id::Grou
         Ok(group_code) => group_code,
         Err(_) => format!("{:?}", group_code.as_ref()),
     }
+}
+pub(crate) fn group_code_to_str(
+    group_code: &rustp2p::protocol::node_id::GroupCode,
+) -> Result<&str, Utf8Error> {
+    let bytes = group_code.as_ref();
+    let mut last = bytes.len();
+    if let Some(pos) = bytes.iter().rposition(|&x| x != 0) {
+        last = pos + 1;
+    }
+    std::str::from_utf8(&bytes[..last])
 }

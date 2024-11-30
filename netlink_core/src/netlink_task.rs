@@ -50,15 +50,11 @@ async fn start_netlink0(
 
     let group_code_filter = config.group_code_filter.unwrap_or_default();
     let group_code_filter_regex = config.group_code_filter_regex.unwrap_or_default();
-    let interceptor = if !group_code_filter.is_empty() || !group_code_filter_regex.is_empty() {
-        Some(GroupCodeInterceptor::new(
-            config.group_code,
-            group_code_filter,
-            group_code_filter_regex,
-        )?)
-    } else {
-        None
-    };
+    let interceptor = GroupCodeInterceptor::new(
+        config.group_code,
+        group_code_filter,
+        group_code_filter_regex,
+    )?;
     let mtu = config.mtu.unwrap_or(1400);
     let udp_config = UdpPipeConfig::default().set_simple_udp_port(config.port);
     let tcp_config = TcpPipeConfig::default().set_tcp_port(config.port);
@@ -217,25 +213,32 @@ fn gen_salt(src_id: &NodeID, dest_id: &NodeID) -> [u8; 12] {
 }
 #[derive(Clone)]
 struct GroupCodeInterceptor {
-    group_code: GroupCode,
-    group_code_filter: Vec<String>,
+    current_group_code: GroupCode,
+    group_code_filter: Vec<GroupCode>,
     group_code_filter_regex: Vec<Regex>,
 }
 impl GroupCodeInterceptor {
     pub fn new(
-        group_code: GroupCode,
+        current_group_code: GroupCode,
         group_code_filter: Vec<String>,
         group_code_filter_regex: Vec<String>,
-    ) -> anyhow::Result<Self> {
-        let mut list = Vec::with_capacity(group_code_filter_regex.len());
-        for x in group_code_filter_regex {
-            list.push(Regex::new(&x)?);
+    ) -> anyhow::Result<Option<Self>> {
+        if group_code_filter.is_empty() && group_code_filter_regex.is_empty() {
+            return Ok(None);
         }
-        Ok(Self {
-            group_code,
-            group_code_filter,
-            group_code_filter_regex: list,
-        })
+        let mut filter = Vec::with_capacity(group_code_filter_regex.len());
+        for x in group_code_filter {
+            filter.push(GroupCode::try_from(x)?)
+        }
+        let mut filter_regex = Vec::with_capacity(group_code_filter_regex.len());
+        for x in group_code_filter_regex {
+            filter_regex.push(Regex::new(&x)?);
+        }
+        Ok(Some(Self {
+            current_group_code,
+            group_code_filter: filter,
+            group_code_filter_regex: filter_regex,
+        }))
     }
 }
 #[async_trait::async_trait]
@@ -243,17 +246,24 @@ impl DataInterceptor for GroupCodeInterceptor {
     async fn pre_handle(&self, data: &mut RecvResult) -> bool {
         if let Ok(packet) = data.net_packet() {
             let group_code = packet.group_code();
-            if group_code == self.group_code.0.as_ref() {
+            if group_code == self.current_group_code.0.as_ref() {
                 return false;
             }
-            if let Ok(group_code) = std::str::from_utf8(group_code) {
-                for x in &self.group_code_filter {
-                    if x == group_code {
-                        return false;
-                    }
+            let group_code = match GroupCode::try_from(group_code) {
+                Ok(group_code) => group_code,
+                Err(e) => {
+                    log::warn!("group code error {e:?} {}", data.remote_addr());
+                    return true;
                 }
+            };
+            for x in &self.group_code_filter {
+                if x == &group_code {
+                    return false;
+                }
+            }
+            if let Ok(str) = group_code.as_str() {
                 for x in &self.group_code_filter_regex {
-                    if x.is_match(group_code) {
+                    if x.is_match(str) {
                         return false;
                     }
                 }
