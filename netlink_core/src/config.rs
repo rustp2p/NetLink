@@ -262,17 +262,15 @@ impl ConfigBuilder {
     }
 
     pub fn build(self) -> anyhow::Result<Config> {
-        let prefix_v6 = self.prefix_v6.unwrap_or(96);
         let node_ipv4 = self.node_ipv4.context("node_ipv4 is required")?;
+        let prefix_v6 = self.prefix_v6.unwrap_or(96);
+        if prefix_v6 > 96 {
+            Err(anyhow::anyhow!("prefix_v6 cannot be greater than 96"))?
+        }
         let node_ipv6 = if let Some(node_ipv6) = self.node_ipv6 {
             let mut octets = node_ipv6.octets();
             octets[12..].copy_from_slice(&node_ipv4.octets());
-
-            let node_ipv6 = Ipv6Addr::from(octets);
-            if prefix_v6 > 96 {
-                Err(anyhow::anyhow!("prefix_v6 cannot be greater than 96"))?
-            }
-            node_ipv6
+            Ipv6Addr::from(octets)
         } else {
             let mut v6: [u8; 16] = [
                 0xfd, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0, 0, 0, 0,
