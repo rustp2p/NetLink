@@ -57,7 +57,7 @@ pub struct Config {
     pub(crate) mtu: Option<u16>,
     pub(crate) udp_stun: Vec<String>,
     pub(crate) tcp_stun: Vec<String>,
-    pub(crate) group_code_filter: Option<Vec<String>>,
+    pub(crate) group_code_filter: Option<Vec<GroupCode>>,
     pub(crate) group_code_filter_regex: Option<Vec<String>>,
 }
 
@@ -122,7 +122,7 @@ pub struct ConfigBuilder {
     mtu: Option<u16>,
     udp_stun: Option<Vec<String>>,
     tcp_stun: Option<Vec<String>>,
-    group_code_filter: Option<Vec<String>>,
+    group_code_filter: Option<Vec<GroupCode>>,
     group_code_filter_regex: Option<Vec<String>>,
 }
 
@@ -252,7 +252,7 @@ impl ConfigBuilder {
         self.tcp_stun = Some(tcp_stun);
         self
     }
-    pub fn group_code_filter(mut self, group_code_filter: Option<Vec<String>>) -> Self {
+    pub fn group_code_filter(mut self, group_code_filter: Option<Vec<GroupCode>>) -> Self {
         self.group_code_filter = group_code_filter;
         self
     }

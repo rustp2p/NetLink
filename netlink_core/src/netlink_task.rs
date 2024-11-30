@@ -220,23 +220,20 @@ struct GroupCodeInterceptor {
 impl GroupCodeInterceptor {
     pub fn new(
         current_group_code: GroupCode,
-        group_code_filter: Vec<String>,
+        group_code_filter: Vec<GroupCode>,
         group_code_filter_regex: Vec<String>,
     ) -> anyhow::Result<Option<Self>> {
         if group_code_filter.is_empty() && group_code_filter_regex.is_empty() {
             return Ok(None);
         }
-        let mut filter = Vec::with_capacity(group_code_filter.len());
-        for x in group_code_filter {
-            filter.push(GroupCode::try_from(x)?)
-        }
+
         let mut filter_regex = Vec::with_capacity(group_code_filter_regex.len());
         for x in group_code_filter_regex {
             filter_regex.push(Regex::new(&x)?);
         }
         Ok(Some(Self {
             current_group_code,
-            group_code_filter: filter,
+            group_code_filter,
             group_code_filter_regex: filter_regex,
         }))
     }
