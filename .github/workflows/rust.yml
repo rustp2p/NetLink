@@ -71,6 +71,9 @@ jobs:
           - TARGET: x86_64-pc-windows-msvc # tested on a windows machine
             OS: windows-latest
             FEATURES: default
+          - TARGET: aarch64-pc-windows-msvc
+            OS: windows-latest
+            FEATURES: default
           - TARGET: mipsel-unknown-linux-musl # openwrt
             OS: ubuntu-latest
             FEATURES: default
