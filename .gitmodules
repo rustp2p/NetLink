@@ -1,3 +1,4 @@
 [submodule "web-app"]
 	path = web-app
 	url = https://github.com/rustp2p/netlink-app.git
+	branch = main
