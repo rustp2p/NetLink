@@ -15,6 +15,9 @@ pub async fn route_listen(
     tokio::spawn(async move {
         futures::pin_mut!(stream);
         loop {
+            if shutdown_manager.is_shutdown_triggered() {
+                return;
+            }
             let value = if let Ok(rs) = shutdown_manager.wrap_cancel(stream.next()).await {
                 if let Some(rs) = rs {
                     rs
