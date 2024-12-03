@@ -1,8 +1,16 @@
+use jsonwebtoken::{self, EncodingKey};
 use salvo::http::Method;
+use salvo::jwt_auth::{ConstDecoder, CookieFinder, HeaderFinder, QueryFinder};
 use salvo::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::PathBuf;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JwtClaims {
+    username: String,
+    exp: i64,
+}
 
 #[handler]
 async fn application_info(res: &mut Response) -> anyhow::Result<()> {
@@ -230,6 +238,99 @@ pub async fn start_api(
     )
     .await
 }
+use time::{Duration, OffsetDateTime};
+struct Validator {
+    secret: String,
+    user_name: String,
+    password: String,
+}
+#[async_trait]
+impl Handler for Validator {
+    async fn handle(
+        &self,
+        req: &mut Request,
+        _depot: &mut Depot,
+        res: &mut Response,
+        _ctrl: &mut FlowCtrl,
+    ) {
+        let user_name = req
+            .form::<String>("user_name")
+            .await
+            .unwrap_or("".to_string());
+        let password = req
+            .form::<String>("password")
+            .await
+            .unwrap_or("".to_string());
+        if user_name == self.user_name && password == self.password {
+            let exp = OffsetDateTime::now_utc() + Duration::days(1);
+            let claim = JwtClaims {
+                username: user_name,
+                exp: exp.unix_timestamp(),
+            };
+            match jsonwebtoken::encode(
+                &jsonwebtoken::Header::default(),
+                &claim,
+                &EncodingKey::from_secret(self.secret.as_bytes()),
+            ) {
+                Ok(token) => {
+                    res.render(Text::Json(
+                        json!({
+                            "code":200,
+                            "data":{
+                                "token":token
+                            }
+                        })
+                        .to_string(),
+                    ));
+                }
+                Err(e) => {
+                    res.render(Text::Json(
+                        json!({
+                            "code":400,
+                            "data":e.to_string()
+                        })
+                        .to_string(),
+                    ));
+                }
+            }
+        } else {
+            res.render(Text::Json(
+                json!({
+                    "code":400,
+                    "data":"账号或密码错误"
+                })
+                .to_string(),
+            ));
+        }
+    }
+}
+struct Authorized;
+#[async_trait]
+impl Handler for Authorized {
+    async fn handle(
+        &self,
+        req: &mut Request,
+        depot: &mut Depot,
+        res: &mut Response,
+        ctrl: &mut FlowCtrl,
+    ) {
+        match depot.jwt_auth_state() {
+            JwtAuthState::Authorized => {
+                ctrl.call_next(req, depot, res).await;
+            }
+            _ => {
+                res.render(Text::Json(
+                    json!({
+                        "code":401,
+                        "data":"Unauthorized"
+                    })
+                    .to_string(),
+                ));
+                ctrl.skip_rest();
+            }
+        }
+    }
+}
 
 pub async fn start<A: StaticFileAssets, I: Handler>(
     http_config: crate::HttpConfiguration,
@@ -237,6 +338,16 @@ pub async fn start<A: StaticFileAssets, I: Handler>(
     api_interceptor: Option<I>,
     static_assets: A,
 ) -> anyhow::Result<()> {
+    let secret = format!(
+        "{:X}",
+        md5::compute(format!("{}{}", http_config.user_name, http_config.password))
+    );
+    let validator = Validator {
+        secret,
+        user_name: http_config.user_name,
+        password: http_config.password,
+    };
+
     let acceptor = TcpListener::new(http_config.addr).bind().await;
     let router = Router::with_path("api").hoop(allow_cors());
     let router = if let Some(i) = api_interceptor {
@@ -319,8 +430,21 @@ pub async fn start<A: StaticFileAssets, I: Handler>(
             .options(handler::empty()),
     );
 
-    let root_router = Router::new();
-    let root_router = root_router.push(router);
+    let auth_handler: JwtAuth<JwtClaims, _> =
+        JwtAuth::new(ConstDecoder::from_secret(validator.secret.as_bytes()))
+            .finders(vec![
+                Box::new(HeaderFinder::new()),
+                Box::new(QueryFinder::new("token")),
+                Box::new(CookieFinder::new("token")),
+            ])
+            .force_passed(true);
+
+    let root_router = Router::new().push(Router::with_path("api/login").post(validator));
+    let root_router = root_router.push(
+        Router::with_hoop(auth_handler)
+            .hoop(Authorized)
+            .push(router),
+    );
     let root_router = root_router.push(Router::new().get(StaticFileHandler(static_assets.clone())));
     let root_router = root_router
         .push(Router::with_path("<**path>").get(StaticFileHandler(static_assets.clone())));
