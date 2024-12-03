@@ -65,13 +65,23 @@ struct Args {
     #[arg(short = 'f', long)]
     config: Option<String>,
     /// Set backend http server address
-    #[arg(long, default_value = CMD_ADDRESS_STR)]
     #[cfg(feature = "web")]
+    #[arg(long, default_value = CMD_ADDRESS_STR)]
     api_addr: Option<String>,
     /// Disable backend http server
-    #[arg(long)]
     #[cfg(feature = "web")]
+    #[arg(long)]
     api_disable: bool,
+
+    /// http username to login
+    #[cfg(feature = "web")]
+    #[arg(short, long)]
+    user_name: Option<String>,
+
+    /// http password to login
+    #[cfg(feature = "web")]
+    #[arg(short, long)]
+    password: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -85,6 +95,17 @@ struct ArgsApiConfig {
     #[cfg(feature = "web")]
     #[arg(long, default_value = CMD_ADDRESS_STR)]
     api_addr: String,
+
+    /// http username to login
+    #[cfg(feature = "web")]
+    #[arg(short, long)]
+    user_name: String,
+
+    /// http password to login
+    #[cfg(feature = "web")]
+    #[arg(short, long)]
+    password: String,
+
     #[arg(long, default_value = "2")]
     threads: usize,
 }
@@ -92,6 +113,12 @@ struct ArgsApiConfig {
 const CMD_ADDRESS: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 23336);
 #[cfg(feature = "web")]
 const CMD_ADDRESS_STR: &str = "127.0.0.1:23336";
+
+#[cfg(feature = "web")]
+const DEFAULT_WEB_USERNAME: &str = "netlink";
+
+#[cfg(feature = "web")]
+const DEFAULT_WEB_PASSWORD: &str = "netlink";
 const LISTEN_PORT: u16 = 23333;
 const LISTEN_PORT_STR: &str = "23333";
 const DEFAULT_ALGORITHM: &str = "chacha20-poly1305";
@@ -117,6 +144,10 @@ pub fn main() -> anyhow::Result<()> {
                             None,
                             #[cfg(feature = "web")]
                             Some(SocketAddr::from_str(&args.api_addr)?),
+                            #[cfg(feature = "web")]
+                            Some(args.user_name),
+                            #[cfg(feature = "web")]
+                            Some(args.password),
                         ),
                     );
                 }
@@ -162,6 +193,10 @@ async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
             api_addr,
             #[cfg(feature = "web")]
             api_disable,
+            #[cfg(feature = "web")]
+            user_name,
+            #[cfg(feature = "web")]
+            password,
             mtu,
             filter,
             ..
@@ -207,6 +242,10 @@ async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
             Some(config),
             #[cfg(feature = "web")]
             api_addr,
+            #[cfg(feature = "web")]
+            user_name,
+            #[cfg(feature = "web")]
+            password,
         )
         .await?;
     } else {
@@ -214,6 +253,10 @@ async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
             None,
             #[cfg(feature = "web")]
             Some(SocketAddr::from_str(CMD_ADDRESS_STR).unwrap()),
+            #[cfg(feature = "web")]
+            None,
+            #[cfg(feature = "web")]
+            None,
         )
         .await?;
     }
@@ -228,11 +271,17 @@ async fn main_by_config_file(file_config: FileConfigView) -> anyhow::Result<()> 
     } else {
         Some(file_config.api_addr)
     };
+    let user_name = file_config.user_name.clone();
+    let password = file_config.password.clone();
     let config = file_config.try_into()?;
     start_by_config(
         Some(config),
         #[cfg(feature = "web")]
         addr,
+        #[cfg(feature = "web")]
+        user_name,
+        #[cfg(feature = "web")]
+        password,
     )
     .await
 }
@@ -240,13 +289,20 @@ async fn main_by_config_file(file_config: FileConfigView) -> anyhow::Result<()> 
 async fn start_by_config(
     config: Option<Config>,
     #[cfg(feature = "web")] cmd_server_addr: Option<SocketAddr>,
+    #[cfg(feature = "web")] user_name: Option<String>,
+    #[cfg(feature = "web")] password: Option<String>,
 ) -> anyhow::Result<()> {
     let api_service = ApiService::new(config).await?;
     #[cfg(feature = "web")]
     if let Some(cmd_server_addr) = cmd_server_addr {
         let handle = interceptor::ApiInterceptor::new(api_service.clone());
+        let http_config = netlink_http::HttpConfiguration {
+            addr: cmd_server_addr,
+            user_name: user_name.unwrap_or(DEFAULT_WEB_USERNAME.to_string()),
+            password: password.unwrap_or(DEFAULT_WEB_PASSWORD.to_string()),
+        };
         if let Err(e) = netlink_http::web_server::start(
-            cmd_server_addr,
+            http_config,
             api_service.inner_api(),
             Some(handle),
             static_file::StaticAssets,

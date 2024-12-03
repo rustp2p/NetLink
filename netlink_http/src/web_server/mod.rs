@@ -2,7 +2,7 @@ use salvo::http::Method;
 use salvo::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::{net::SocketAddr, path::PathBuf};
+use std::path::PathBuf;
 
 #[handler]
 async fn application_info(res: &mut Response) -> anyhow::Result<()> {
@@ -218,9 +218,12 @@ fn allow_cors() -> CorsHandler {
         .allow_headers("*")
         .into_handler()
 }
-pub async fn start_api(addr: SocketAddr, api_service: ApiService) -> anyhow::Result<()> {
+pub async fn start_api(
+    http_config: crate::HttpConfiguration,
+    api_service: ApiService,
+) -> anyhow::Result<()> {
     start(
-        addr,
+        http_config,
         api_service,
         Option::<DefaultApiInterceptor>::None,
         DefaultStaticFileAssets,
@@ -229,12 +232,12 @@ pub async fn start_api(addr: SocketAddr, api_service: ApiService) -> anyhow::Res
 }
 
 pub async fn start<A: StaticFileAssets, I: Handler>(
-    addr: SocketAddr,
+    http_config: crate::HttpConfiguration,
     api_service: ApiService,
     api_interceptor: Option<I>,
     static_assets: A,
 ) -> anyhow::Result<()> {
-    let acceptor = TcpListener::new(addr).bind().await;
+    let acceptor = TcpListener::new(http_config.addr).bind().await;
     let router = Router::with_path("api").hoop(allow_cors());
     let router = if let Some(i) = api_interceptor {
         router.hoop(i)
@@ -322,7 +325,7 @@ pub async fn start<A: StaticFileAssets, I: Handler>(
     let root_router = root_router
         .push(Router::with_path("<**path>").get(StaticFileHandler(static_assets.clone())));
     tokio::spawn(async move {
-        log::info!("http service has served on http://{addr}");
+        log::info!("http service has served on http://{}", http_config.addr);
         Server::new(acceptor).serve(root_router).await;
     });
     Ok(())
