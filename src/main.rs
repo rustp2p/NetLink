@@ -112,7 +112,7 @@ struct ArgsApiConfig {
 #[cfg(feature = "web")]
 const CMD_ADDRESS: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 23336);
 #[cfg(feature = "web")]
-const CMD_ADDRESS_STR: &str = "127.0.0.1:23336";
+const CMD_ADDRESS_STR: &str = "0.0.0.0:23336";
 
 #[cfg(feature = "web")]
 const DEFAULT_WEB_USERNAME: &str = "netlink";

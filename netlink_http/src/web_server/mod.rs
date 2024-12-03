@@ -223,7 +223,10 @@ fn allow_cors() -> CorsHandler {
             Method::DELETE,
             Method::OPTIONS,
         ])
-        .allow_headers("*")
+        .allow_headers([
+            "*".to_string().try_into().unwrap(),
+            "Authorization".to_string().try_into().unwrap(),
+        ])
         .into_handler()
 }
 pub async fn start_api(
@@ -332,6 +335,17 @@ impl Handler for Authorized {
     }
 }
 
+#[handler]
+pub async fn check_me(res: &mut Response) {
+    res.render(Text::Json(
+        json!({
+            "code":200,
+            "data":"OK"
+        })
+        .to_string(),
+    ));
+}
+
 pub async fn start<A: StaticFileAssets, I: Handler>(
     http_config: crate::HttpConfiguration,
     api_service: ApiService,
@@ -349,12 +363,17 @@ pub async fn start<A: StaticFileAssets, I: Handler>(
     };
 
     let acceptor = TcpListener::new(http_config.addr).bind().await;
-    let router = Router::with_path("api").hoop(allow_cors());
+    let router = Router::with_path("api");
     let router = if let Some(i) = api_interceptor {
         router.hoop(i)
     } else {
         router
     };
+    let router = router.push(
+        Router::with_path("check")
+            .get(check_me)
+            .options(handler::empty()),
+    );
     let router = router.push(
         Router::with_path("application-info")
             .get(application_info)
@@ -439,7 +458,11 @@ pub async fn start<A: StaticFileAssets, I: Handler>(
             ])
             .force_passed(true);
 
-    let root_router = Router::new().push(Router::with_path("api/login").post(validator));
+    let root_router = Router::new().hoop(allow_cors()).push(
+        Router::with_path("api/login")
+            .post(validator)
+            .options(handler::empty()),
+    );
     let root_router = root_router.push(
         Router::with_hoop(auth_handler)
             .hoop(Authorized)
