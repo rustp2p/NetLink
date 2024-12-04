@@ -2,7 +2,7 @@ use crate::config::FileConfigView;
 use crate::service::ApiService;
 use clap::Parser;
 use env_logger::Env;
-use netlink_http::{Config, ConfigBuilder, PeerAddress};
+use netlink_http::{Config, ConfigBuilder, HttpUserInfo, PeerAddress};
 use std::future::Future;
 use std::net::Ipv4Addr;
 #[cfg(feature = "web")]
@@ -75,12 +75,12 @@ struct Args {
 
     /// http username to login
     #[cfg(feature = "web")]
-    #[arg(short, long)]
+    #[arg(long)]
     user_name: Option<String>,
 
     /// http password to login
     #[cfg(feature = "web")]
-    #[arg(short, long)]
+    #[arg(long)]
     password: Option<String>,
 }
 
@@ -112,13 +112,8 @@ struct ArgsApiConfig {
 #[cfg(feature = "web")]
 const CMD_ADDRESS: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 23336);
 #[cfg(feature = "web")]
-const CMD_ADDRESS_STR: &str = "0.0.0.0:23336";
+const CMD_ADDRESS_STR: &str = "127.0.0.1:23336";
 
-#[cfg(feature = "web")]
-const DEFAULT_WEB_USERNAME: &str = "netlink";
-
-#[cfg(feature = "web")]
-const DEFAULT_WEB_PASSWORD: &str = "netlink";
 const LISTEN_PORT: u16 = 23333;
 const LISTEN_PORT_STR: &str = "23333";
 const DEFAULT_ALGORITHM: &str = "chacha20-poly1305";
@@ -296,10 +291,20 @@ async fn start_by_config(
     #[cfg(feature = "web")]
     if let Some(cmd_server_addr) = cmd_server_addr {
         let handle = interceptor::ApiInterceptor::new(api_service.clone());
+        let user_info = match (user_name, password) {
+            (Some(user_name), Some(password)) => Some(HttpUserInfo {
+                user_name,
+                password,
+            }),
+            (None, None) => None,
+            _ => {
+                log::warn!("Missing user or password,login configuration does not take effect");
+                None
+            }
+        };
         let http_config = netlink_http::HttpConfiguration {
             addr: cmd_server_addr,
-            user_name: user_name.unwrap_or(DEFAULT_WEB_USERNAME.to_string()),
-            password: password.unwrap_or(DEFAULT_WEB_PASSWORD.to_string()),
+            user_info,
         };
         if let Err(e) = netlink_http::web_server::start(
             http_config,

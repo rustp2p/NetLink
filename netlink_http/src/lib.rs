@@ -7,6 +7,10 @@ use std::net::SocketAddr;
 
 pub struct HttpConfiguration {
     pub addr: SocketAddr,
+    pub user_info: Option<HttpUserInfo>,
+}
+
+pub struct HttpUserInfo {
     pub user_name: String,
     pub password: String,
 }

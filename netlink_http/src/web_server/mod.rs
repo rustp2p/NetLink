@@ -352,23 +352,38 @@ pub async fn start<A: StaticFileAssets, I: Handler>(
     api_interceptor: Option<I>,
     static_assets: A,
 ) -> anyhow::Result<()> {
-    let secret = format!(
-        "{:X}",
-        md5::compute(format!("{}{}", http_config.user_name, http_config.password))
-    );
-    let validator = Validator {
-        secret,
-        user_name: http_config.user_name,
-        password: http_config.password,
-    };
-
     let acceptor = TcpListener::new(http_config.addr).bind().await;
-    let router = Router::with_path("api");
-    let router = if let Some(i) = api_interceptor {
+    let router = Router::with_path("api").hoop(allow_cors());
+    let mut router = if let Some(i) = api_interceptor {
         router.hoop(i)
     } else {
         router
     };
+    if let Some(user_info) = http_config.user_info {
+        let secret = sha256::digest(format!("{}-{}", user_info.user_name, user_info.password));
+        let validator = Validator {
+            secret,
+            user_name: user_info.user_name,
+            password: user_info.password,
+        };
+        let auth_handler: JwtAuth<JwtClaims, _> =
+            JwtAuth::new(ConstDecoder::from_secret(validator.secret.as_bytes()))
+                .finders(vec![
+                    Box::new(HeaderFinder::new()),
+                    Box::new(QueryFinder::new("token")),
+                    Box::new(CookieFinder::new("token")),
+                ])
+                .force_passed(true);
+
+        router = router.push(
+            Router::with_path("login")
+                .post(validator)
+                .options(handler::empty()),
+        );
+        router = router
+            .hoop(auth_handler)
+            .hoop_when(Authorized, |req, _| req.uri().path() != "/api/login");
+    }
     let router = router.push(
         Router::with_path("check")
             .get(check_me)
@@ -449,25 +464,8 @@ pub async fn start<A: StaticFileAssets, I: Handler>(
             .options(handler::empty()),
     );
 
-    let auth_handler: JwtAuth<JwtClaims, _> =
-        JwtAuth::new(ConstDecoder::from_secret(validator.secret.as_bytes()))
-            .finders(vec![
-                Box::new(HeaderFinder::new()),
-                Box::new(QueryFinder::new("token")),
-                Box::new(CookieFinder::new("token")),
-            ])
-            .force_passed(true);
-
-    let root_router = Router::new().hoop(allow_cors()).push(
-        Router::with_path("api/login")
-            .post(validator)
-            .options(handler::empty()),
-    );
-    let root_router = root_router.push(
-        Router::with_hoop(auth_handler)
-            .hoop(Authorized)
-            .push(router),
-    );
+    let root_router = Router::new();
+    let root_router = root_router.push(router);
     let root_router = root_router.push(Router::new().get(StaticFileHandler(static_assets.clone())));
     let root_router = root_router
         .push(Router::with_path("<**path>").get(StaticFileHandler(static_assets.clone())));
