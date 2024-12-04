@@ -11,7 +11,7 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::cipher::Cipher;
 pub const NODE_IPV6: u8 = 96;
-pub const MTU: u16 = 1400;
+pub const MTU: u16 = 1380;
 pub const DEFAULT_ALGORITHM: &str = "chacha20-poly1305";
 pub const UDP_STUN: [&str; 6] = [
     "stun.miwifi.com",
