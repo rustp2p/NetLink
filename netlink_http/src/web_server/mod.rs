@@ -330,7 +330,7 @@ impl Handler for Authorized {
                         return;
                     }
                     Err(e) => {
-                        log::error!("token check{e:?}")
+                        log::error!("token check:{e:?} remote_addr={:?}",req.remote_addr())
                     }
                 }
             }
