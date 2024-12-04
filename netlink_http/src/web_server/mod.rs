@@ -1,6 +1,5 @@
-use jsonwebtoken::{self, EncodingKey};
+use jsonwebtoken::{self, Algorithm, DecodingKey, EncodingKey, Validation};
 use salvo::http::Method;
-use salvo::jwt_auth::{ConstDecoder, CookieFinder, HeaderFinder, QueryFinder};
 use salvo::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -307,7 +306,9 @@ impl Handler for Validator {
         }
     }
 }
-struct Authorized;
+struct Authorized {
+    secret: String,
+}
 #[async_trait]
 impl Handler for Authorized {
     async fn handle(
@@ -317,21 +318,31 @@ impl Handler for Authorized {
         res: &mut Response,
         ctrl: &mut FlowCtrl,
     ) {
-        match depot.jwt_auth_state() {
-            JwtAuthState::Authorized => {
-                ctrl.call_next(req, depot, res).await;
-            }
-            _ => {
-                res.render(Text::Json(
-                    json!({
-                        "code":401,
-                        "data":"Unauthorized"
-                    })
-                    .to_string(),
-                ));
-                ctrl.skip_rest();
+        if let Some(authorization) = req.header::<String>("Authorization") {
+            if let Some(token) = authorization.strip_prefix("Bearer ") {
+                match jsonwebtoken::decode::<JwtClaims>(
+                    token,
+                    &DecodingKey::from_secret(self.secret.as_bytes()),
+                    &Validation::new(Algorithm::HS256),
+                ) {
+                    Ok(_rs) => {
+                        ctrl.call_next(req, depot, res).await;
+                        return;
+                    }
+                    Err(e) => {
+                        log::error!("token check{e:?}")
+                    }
+                }
             }
         }
+        res.render(Text::Json(
+            json!({
+                "code":401,
+                "data":"Unauthorized"
+            })
+            .to_string(),
+        ));
+        ctrl.skip_rest();
     }
 }
 
@@ -362,27 +373,19 @@ pub async fn start<A: StaticFileAssets, I: Handler>(
     if let Some(user_info) = http_config.user_info {
         let secret = sha256::digest(format!("{}-{}", user_info.user_name, user_info.password));
         let validator = Validator {
-            secret,
+            secret: secret.clone(),
             user_name: user_info.user_name,
             password: user_info.password,
         };
-        let auth_handler: JwtAuth<JwtClaims, _> =
-            JwtAuth::new(ConstDecoder::from_secret(validator.secret.as_bytes()))
-                .finders(vec![
-                    Box::new(HeaderFinder::new()),
-                    Box::new(QueryFinder::new("token")),
-                    Box::new(CookieFinder::new("token")),
-                ])
-                .force_passed(true);
 
         router = router.push(
             Router::with_path("login")
                 .post(validator)
                 .options(handler::empty()),
         );
-        router = router
-            .hoop(auth_handler)
-            .hoop_when(Authorized, |req, _| req.uri().path() != "/api/login");
+        router = router.hoop_when(Authorized { secret }, |req, _| {
+            req.uri().path() != "/api/login"
+        });
     }
     let router = router.push(
         Router::with_path("check")
