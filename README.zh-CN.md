@@ -32,7 +32,7 @@ Options:
   -f, --config <CONFIG>          使用配置文件启动
       --api-addr <API_ADDR>      设置http服务地址，默认是：127.0.0.1:23336
       --api-disable              禁用http服务
-      --user-name <USER_NAME>    设置http登录账号
+      --username <USER_NAME>     设置http登录账号
       --password <PASSWORD>      设置http登录密码
   -h, --help                     帮助
   -V, --version                  版本
@@ -54,7 +54,7 @@ Options:
 ## 工作线程数. 默认值 2
 #threads: 2
 ## 登录用户名
-#user_name: 
+#username: 
 ## 登录密码
 #password: 
 ## 组编号，必填

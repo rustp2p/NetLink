@@ -212,6 +212,7 @@ impl Handler for NodesByGroup {
 use crate::service::ApiService;
 use netlink_core::config::Config;
 use salvo::cors::{Cors, CorsHandler};
+use sha2::Digest;
 
 fn allow_cors() -> CorsHandler {
     Cors::new()
@@ -242,8 +243,8 @@ pub async fn start_api(
 }
 use time::{Duration, OffsetDateTime};
 struct Validator {
-    secret: String,
-    user_name: String,
+    secret: Vec<u8>,
+    username: String,
     password: String,
 }
 #[async_trait]
@@ -255,7 +256,7 @@ impl Handler for Validator {
         res: &mut Response,
         _ctrl: &mut FlowCtrl,
     ) {
-        let user_name = req
+        let username = req
             .form::<String>("user_name")
             .await
             .unwrap_or("".to_string());
@@ -263,16 +264,16 @@ impl Handler for Validator {
             .form::<String>("password")
             .await
             .unwrap_or("".to_string());
-        if user_name == self.user_name && password == self.password {
+        if username == self.username && password == self.password {
             let exp = OffsetDateTime::now_utc() + Duration::days(1);
             let claim = JwtClaims {
-                username: user_name,
+                username,
                 exp: exp.unix_timestamp(),
             };
             match jsonwebtoken::encode(
                 &jsonwebtoken::Header::default(),
                 &claim,
-                &EncodingKey::from_secret(self.secret.as_bytes()),
+                &EncodingKey::from_secret(&self.secret),
             ) {
                 Ok(token) => {
                     res.render(Text::Json(
@@ -307,7 +308,7 @@ impl Handler for Validator {
     }
 }
 struct Authorized {
-    secret: String,
+    secret: Vec<u8>,
 }
 #[async_trait]
 impl Handler for Authorized {
@@ -322,7 +323,7 @@ impl Handler for Authorized {
             if let Some(token) = authorization.strip_prefix("Bearer ") {
                 match jsonwebtoken::decode::<JwtClaims>(
                     token,
-                    &DecodingKey::from_secret(self.secret.as_bytes()),
+                    &DecodingKey::from_secret(&self.secret),
                     &Validation::new(Algorithm::HS256),
                 ) {
                     Ok(_rs) => {
@@ -330,7 +331,7 @@ impl Handler for Authorized {
                         return;
                     }
                     Err(e) => {
-                        log::error!("token check:{e:?} remote_addr={:?}",req.remote_addr())
+                        log::error!("token check:{e:?} remote_addr={:?}", req.remote_addr())
                     }
                 }
             }
@@ -371,10 +372,14 @@ pub async fn start<A: StaticFileAssets, I: Handler>(
         router
     };
     if let Some(user_info) = http_config.user_info {
-        let secret = sha256::digest(format!("{}-{}", user_info.user_name, user_info.password));
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(user_info.username.as_bytes());
+        hasher.update(user_info.password.as_bytes());
+        let secret: [u8; 32] = hasher.finalize().into();
+        let secret = secret.to_vec();
         let validator = Validator {
             secret: secret.clone(),
-            user_name: user_info.user_name,
+            username: user_info.username,
             password: user_info.password,
         };
 

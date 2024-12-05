@@ -11,6 +11,6 @@ pub struct HttpConfiguration {
 }
 
 pub struct HttpUserInfo {
-    pub user_name: String,
+    pub username: String,
     pub password: String,
 }

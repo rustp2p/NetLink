@@ -26,7 +26,7 @@ Options:
   -f, --config <CONFIG>          Start using configuration file
       --api-addr <API_ADDR>      Set backend http server address [default: 127.0.0.1:23336]
       --api-disable              Disable backend http server
-      --user-name <USER_NAME>    http username to login
+      --username <USER_NAME>     http username to login
       --password <PASSWORD>      http password to login
   -h, --help                     Print help information
   -V, --version                  Print version information
@@ -48,7 +48,7 @@ Options:
 ## Number of program task threads. default is 2
 #threads: 2
 ## http username to login
-#user_name: 
+#username: 
 ## http password to login
 #password: 
 

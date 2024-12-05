@@ -34,7 +34,7 @@ pub struct FileConfigView {
     pub tcp_stun: Option<Vec<String>>,
     pub group_code_filter: Option<Vec<String>>,
     #[cfg(feature = "web")]
-    pub user_name: Option<String>,
+    pub username: Option<String>,
     #[cfg(feature = "web")]
     pub password: Option<String>,
 }
@@ -134,7 +134,7 @@ impl Default for FileConfigView {
             udp_stun: None,
             tcp_stun: None,
             group_code_filter: None,
-            user_name: None,
+            username: None,
             password: None,
         }
     }

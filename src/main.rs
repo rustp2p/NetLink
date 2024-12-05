@@ -76,7 +76,7 @@ struct Args {
     /// http username to login
     #[cfg(feature = "web")]
     #[arg(long)]
-    user_name: Option<String>,
+    username: Option<String>,
 
     /// http password to login
     #[cfg(feature = "web")]
@@ -99,7 +99,7 @@ struct ArgsApiConfig {
     /// http username to login
     #[cfg(feature = "web")]
     #[arg(short, long)]
-    user_name: String,
+    username: String,
 
     /// http password to login
     #[cfg(feature = "web")]
@@ -140,7 +140,7 @@ pub fn main() -> anyhow::Result<()> {
                             #[cfg(feature = "web")]
                             Some(SocketAddr::from_str(&args.api_addr)?),
                             #[cfg(feature = "web")]
-                            Some(args.user_name),
+                            Some(args.username),
                             #[cfg(feature = "web")]
                             Some(args.password),
                         ),
@@ -189,7 +189,7 @@ async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
             #[cfg(feature = "web")]
             api_disable,
             #[cfg(feature = "web")]
-            user_name,
+            username,
             #[cfg(feature = "web")]
             password,
             mtu,
@@ -238,7 +238,7 @@ async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
             #[cfg(feature = "web")]
             api_addr,
             #[cfg(feature = "web")]
-            user_name,
+            username,
             #[cfg(feature = "web")]
             password,
         )
@@ -266,7 +266,7 @@ async fn main_by_config_file(file_config: FileConfigView) -> anyhow::Result<()> 
     } else {
         Some(file_config.api_addr)
     };
-    let user_name = file_config.user_name.clone();
+    let username = file_config.username.clone();
     let password = file_config.password.clone();
     let config = file_config.try_into()?;
     start_by_config(
@@ -274,7 +274,7 @@ async fn main_by_config_file(file_config: FileConfigView) -> anyhow::Result<()> 
         #[cfg(feature = "web")]
         addr,
         #[cfg(feature = "web")]
-        user_name,
+        username,
         #[cfg(feature = "web")]
         password,
     )
@@ -284,18 +284,15 @@ async fn main_by_config_file(file_config: FileConfigView) -> anyhow::Result<()> 
 async fn start_by_config(
     config: Option<Config>,
     #[cfg(feature = "web")] cmd_server_addr: Option<SocketAddr>,
-    #[cfg(feature = "web")] user_name: Option<String>,
+    #[cfg(feature = "web")] username: Option<String>,
     #[cfg(feature = "web")] password: Option<String>,
 ) -> anyhow::Result<()> {
     let api_service = ApiService::new(config).await?;
     #[cfg(feature = "web")]
     if let Some(cmd_server_addr) = cmd_server_addr {
         let handle = interceptor::ApiInterceptor::new(api_service.clone());
-        let user_info = match (user_name, password) {
-            (Some(user_name), Some(password)) => Some(HttpUserInfo {
-                user_name,
-                password,
-            }),
+        let user_info = match (username, password) {
+            (Some(username), Some(password)) => Some(HttpUserInfo { username, password }),
             (None, None) => None,
             _ => {
                 log::warn!("Missing user or password,login configuration does not take effect");
