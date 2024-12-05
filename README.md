@@ -11,7 +11,7 @@ Usage: ./netLink.exe --api_addr 192.168.0.1:8080
 Usage: netLink.exe [OPTIONS] --local <LOCAL IP> --group-code <GROUP CODE>
 
 Options:
-  -p, --peer <PEER>              Peer node address. e.g.: -p tcp://192.168.10.13:23333 -p udp://192.168.10.23:23333
+  -p, --peer <PEER>              Peer node address. e.g.: -p tcp://192.168.10.13:23333 -p udp://192.168.10.23:23333 -p txt://domain
   -l, --local <LOCAL IP>         Local node IP and prefix.If there is no 'prefix', Will not enable Tun. e.g.: -l 10.26.0.2/24
   -g, --group-code <GROUP CODE>  Nodes with the same group_code can form a network (Maximum length 16)
   -P, --port <PORT>              Listen local port [default: 23333]
@@ -21,9 +21,13 @@ Options:
   -a, --algorithm <ALGORITHM>    Set encryption algorithm. Optional aes-gcm/chacha20-poly1305/xor [default: chacha20-poly1305]
       --exit-node <EXIT_NODE>    Global exit node,please use it together with '--bind-dev'
       --tun-name <TUN_NAME>      Set tun name
+      --mtu <MTU>                Set tun mtu
+  -X, --filter <FILTER>          Group code whitelist, using regular expressions
   -f, --config <CONFIG>          Start using configuration file
       --api-addr <API_ADDR>      Set backend http server address [default: 127.0.0.1:23336]
       --api-disable              Disable backend http server
+      --user-name <USER_NAME>    http username to login
+      --password <PASSWORD>      http password to login
   -h, --help                     Print help information
   -V, --version                  Print version information
 
@@ -43,6 +47,11 @@ Options:
 #api_disable: false
 ## Number of program task threads. default is 2
 #threads: 2
+## http username to login
+#user_name: 
+## http password to login
+#password: 
+
 ## group code. cannot be empty
 group_code: String
 ## node tun ipv4. cannot be empty
@@ -69,6 +78,12 @@ node_ipv4: "10.26.1.2"
 #bind_dev_name: "eth0"
 ## Global exit node,please use it together with "bind_dev_name"
 #exit_node: 
+## Set tun mtu
+#mtu: 1400
+## Group code whitelist, using regular expressions
+#group_code_filter:
+#   - ^test # Starting with 'test'
+#   - ^pass$ # eq pass
 
 ## stun server addr
 #udp_stun:

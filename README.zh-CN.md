@@ -17,7 +17,7 @@ Commands:
   help  打印帮助信息
 
 Options:
-  -p, --peer <PEER>              远端节点地址(需可直接访问). 如: -p tcp://192.168.10.13:23333 或 -p udp://192.168.10.23:23333
+  -p, --peer <PEER>              远端节点地址(需可直接访问). 如: -p tcp://192.168.10.13:23333 或 -p udp://192.168.10.23:23333 或 -p txt://域名
   -l, --local <LOCAL IP>         设定本地节点地址 CIDR格式. 如: -l 10.26.0.2/24 不填掩码则不监听虚拟网段，相当于只能当中继节点
   -g, --group-code <GROUP CODE>  节点所在组的名称(最大长度16),只有同一组的节点才能进行数据访问
   -P, --port <PORT>              本地监听地址
@@ -27,9 +27,13 @@ Options:
   -a, --algorithm <ALGORITHM>    设定加密算法. 可选择算法: aes-gcm/chacha20-poly1305/xor, 默认是：chacha20-poly1305
       --exit-node <EXIT_NODE>    网关节点，请配合'--bind-dev'使用
       --tun-name <TUN_NAME>      设定本地tun的名称
+      --mtu <MTU>                设置mtu
+  -X, --filter <FILTER>          Group code 白名单，使用正则表达式
   -f, --config <CONFIG>          使用配置文件启动
       --api-addr <API_ADDR>      设置http服务地址，默认是：127.0.0.1:23336
       --api-disable              禁用http服务
+      --user-name <USER_NAME>    设置http登录账号
+      --password <PASSWORD>      设置http登录密码
   -h, --help                     帮助
   -V, --version                  版本
 
@@ -49,6 +53,10 @@ Options:
 #api_disable: false
 ## 工作线程数. 默认值 2
 #threads: 2
+## 登录用户名
+#user_name: 
+## 登录密码
+#password: 
 ## 组编号，必填
 group_code: String
 ## 虚拟ipv4 必填
@@ -75,6 +83,12 @@ node_ipv4: "10.26.1.2"
 #bind_dev_name: "eth0"
 ## 全局出口，配合 "bind_dev_name"一起使用
 #exit_node: 
+## 设置网卡mtu
+#mtu: 1400
+## Group code 白名单，使用正则表达式
+#group_code_filter:
+#   - ^test # 放行test开头的
+#   - ^pass$ # 全匹配pass
 
 ## tun服务 区分udp和tcp服务
 #udp_stun:
@@ -183,7 +197,7 @@ Node-D: ./netLink --group-code 123 --local 10.26.1.5/24 --peer 192.168.1.2:23333
 
 所有已连接的节点可以互相访问
 
-而且, 多节点也可以通过'-peer'连接.  
+多节点也可以通过'-peer'连接.  
 example：
 
 ```
@@ -192,6 +206,9 @@ Node-B: ./netLink --group-code 123 --local 10.26.1.3/24 --peer 8.210.54.141:2333
 Node-C: ./netLink --group-code 123 --local 10.26.1.4/24 --peer 8.210.54.141:23333
 Node-D: ./netLink --group-code 123 --local 10.26.1.5/24 --peer 192.168.1.2:23333 --peer 8.210.54.141:23333
 ```
+
+此外，--peer也支持DNS TXT记录重定向，用法：--peer txt://域名，然后在对应域名添加TXT记录，例如 tcp://8.210.54.141:23333
+
 
 ## 子网路由
 
