@@ -16,14 +16,14 @@ crate-type = [
 anyhow = "1"
 serde = { version = "1.0", features = ["derive"] }
 #rustp2p = { version = "0.1", features = ["chacha20-poly1305", "aes-gcm"] }
-rustp2p = { git = "https://github.com/rustp2p/rustp2p.git", features = ["chacha20-poly1305", "aes-gcm"] }
+rustp2p = { version = "0.1", features = ["chacha20-poly1305", "aes-gcm"] }
 
 libc = "0.2"
 parking_lot = "0.12"
 async-shutdown = "0.2"
 log = "0.4"
 
-tokio = { version = "1.41", features = ["full"] }
+tokio = { version = "1.42", features = ["full"] }
 futures = "0.3"
 
 tun-rs = { version = "1", features = ["async"] }
