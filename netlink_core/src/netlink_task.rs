@@ -348,24 +348,29 @@ async fn tun_send(
     let mut bufs = Vec::with_capacity(tun_rs::platform::IDEAL_BATCH_SIZE);
 
     while let Ok(data) = receiver.recv().await {
-        let offset = data.offset();
+        let first_offset = data.offset();
         let mut op = Some(data);
+        let mut next_data: Option<RecvUserData> = None;
         loop {
             let mut data = op.take().unwrap();
-            assert_eq!(offset, data.offset());
             if let Some(cipher) = cipher.as_ref() {
+                let current_offset = data.offset();
                 match cipher.decrypt(
                     gen_salt(&data.src_id(), &data.dest_id()),
                     data.payload_mut(),
                 ) {
                     Ok(len) => {
-                        data.original_bytes_mut().truncate(offset + len);
+                        data.original_bytes_mut().truncate(current_offset + len);
                     }
                     Err(e) => {
                         log::warn!("decrypt {e:?},{:?}->{:?}", data.src_id(), data.dest_id());
                         break;
                     }
                 }
+            }
+            if first_offset != data.offset() {
+                next_data.replace(data);
+                break;
             }
             let buffer = Buffer(data);
             bufs.push(buffer);
@@ -383,10 +388,22 @@ async fn tun_send(
             }
         }
         if !bufs.is_empty() {
-            if let Err(e) = device.send_multiple(&mut table, &mut bufs, offset).await {
+            if let Err(e) = device
+                .send_multiple(&mut table, &mut bufs, first_offset)
+                .await
+            {
                 log::warn!("device.send_multiple {e:?}")
             }
             bufs.clear();
+        }
+        if let Some(next_data) = next_data {
+            let offset = next_data.offset();
+            if let Err(e) = device
+                .send_multiple(&mut table, &mut [Buffer(next_data)], offset)
+                .await
+            {
+                log::warn!("device.send_multiple {e:?}")
+            }
         }
     }
 }
