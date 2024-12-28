@@ -1,13 +1,16 @@
-use crate::config::FileConfigView;
-use crate::service::ApiService;
-use clap::Parser;
-use env_logger::Env;
-use netlink_http::{Config, ConfigBuilder, HttpUserInfo, PeerAddress};
 use std::future::Future;
 use std::net::Ipv4Addr;
 #[cfg(feature = "web")]
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
+
+use clap::Parser;
+use log::LevelFilter;
+
+use netlink_http::{Config, ConfigBuilder, HttpUserInfo, PeerAddress};
+
+use crate::config::FileConfigView;
+use crate::service::ApiService;
 
 mod config;
 #[cfg(feature = "web")]
@@ -82,12 +85,18 @@ struct Args {
     #[cfg(feature = "web")]
     #[arg(long)]
     password: Option<String>,
+    /// Set the log level. Available options are off/error/warn/info ...
+    /// or use `log4rs.yaml` file
+    #[arg(long)]
+    log: Option<LevelFilter>,
 }
 
 #[derive(Parser, Debug)]
 struct ArgsConfig {
     #[arg(short = 'f', long)]
     config: String,
+    #[arg(long)]
+    log: Option<LevelFilter>,
 }
 
 #[derive(Parser, Debug)]
@@ -108,7 +117,10 @@ struct ArgsApiConfig {
 
     #[arg(long, default_value = "2")]
     threads: usize,
+    #[arg(long)]
+    log: Option<LevelFilter>,
 }
+
 #[cfg(feature = "web")]
 const CMD_ADDRESS: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 23336);
 #[cfg(feature = "web")]
@@ -119,7 +131,31 @@ const LISTEN_PORT_STR: &str = "23333";
 const DEFAULT_ALGORITHM: &str = "chacha20-poly1305";
 
 pub fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    if std::path::Path::new("log4rs.yaml").exists() {
+        let _ = log4rs::init_file("log4rs.yaml", Default::default());
+    } else {
+        // https://github.com/clap-rs/clap/issues/4498
+        let filter = Args::try_parse()
+            .map(|v| v.log)
+            .unwrap_or_else(|_| {
+                ArgsApiConfig::try_parse()
+                    .map(|v| v.log)
+                    .unwrap_or_else(|_| ArgsConfig::try_parse().map(|v| v.log).unwrap_or_default())
+            })
+            .unwrap_or(LevelFilter::Info);
+
+        let stdout = log4rs::append::console::ConsoleAppender::builder().build();
+        let config = log4rs::Config::builder()
+            .appender(log4rs::config::Appender::builder().build("stdout", Box::new(stdout)))
+            .build(
+                log4rs::config::Root::builder()
+                    .appender("stdout")
+                    .build(filter),
+            )
+            .unwrap();
+        let _ = log4rs::init_config(config);
+    }
+
     if std::env::args().count() == 1 {
         block_on(2, main_by_cmd(None))
     } else {
