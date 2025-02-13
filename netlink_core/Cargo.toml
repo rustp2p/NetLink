@@ -26,7 +26,7 @@ log = "0.4"
 tokio = { version = "1.42", features = ["full"] }
 futures = "0.3"
 
-tun-rs = { version = "1", features = ["async"] }
+tun-rs = { version = "2", features = ["async"] }
 
 pnet_packet = "0.35"
 tachyonix = "0.3"

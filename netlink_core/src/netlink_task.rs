@@ -9,7 +9,7 @@ use rustp2p::{
     protocol::node_id::NodeID,
 };
 use std::{net::Ipv4Addr, sync::Arc};
-use tun_rs::{AbstractDevice, AsyncDevice};
+use tun_rs::AsyncDevice;
 
 use crate::cipher;
 use crate::config::{default_tcp_stun, default_udp_stun, Config, GroupCode};
@@ -61,7 +61,7 @@ async fn start_netlink0(
     let mut pipe_config = PipeConfig::empty()
         .set_udp_pipe_config(udp_config)
         .set_tcp_pipe_config(tcp_config)
-        .set_recycle_buf_cap(256)
+        .set_recycle_buf_cap(0)
         .set_direct_addrs(
             config
                 .peer
@@ -70,9 +70,8 @@ async fn start_netlink0(
                 .map(|v| v.0)
                 .collect(),
         )
-        // largest possible UDP datagram
-        .set_recv_buffer_size(u16::MAX as usize)
-        .set_send_buffer_size(2048)
+        .set_recv_buffer_size(mtu as usize + 1024)
+        .set_send_buffer_size(mtu as usize + 1024)
         .set_group_code(config.group_code.0)
         .set_node_id(config.node_ipv4.into())
         .set_udp_stun_servers(config.udp_stun.unwrap_or(default_udp_stun()))
@@ -102,30 +101,26 @@ async fn start_netlink0(
         let device = if let Some(device) = device {
             device
         } else {
-            let mut dev_config = tun_rs::Configuration::default();
-            dev_config
-                .address_with_prefix(config.node_ipv4, config.prefix)
-                .platform_config(|_v| {
-                    #[cfg(windows)]
-                    {
-                        _v.ring_capacity(4 * 1024 * 1024);
-                        _v.metric(0);
-                    }
-                    #[cfg(target_os = "linux")]
-                    _v.offload(true);
-                })
-                .mtu(mtu)
-                .up();
+            let mut device_builder = tun_rs::DeviceBuilder::default();
+            device_builder = device_builder
+                .ipv4(config.node_ipv4, config.prefix, None)
+                .mtu(mtu);
             if let Some(name) = config.tun_name {
-                dev_config.name(name);
+                device_builder = device_builder.name(name);
             }
-
-            let device = tun_rs::create_as_async(&dev_config)?;
+            #[cfg(windows)]
+            {
+                device_builder = device_builder.ring_capacity(4 * 1024 * 1024).metric(0);
+            }
+            #[cfg(target_os = "linux")]
+            {
+                device_builder = device_builder.offload(true);
+            }
+            let device = device_builder.build_async()?;
             if let Some(v6) = config.node_ipv6 {
-                if let Err(e) = device.add_address_v6(
-                    v6.into(),
-                    config.prefix_v6.unwrap_or(crate::config::NODE_IPV6),
-                ) {
+                if let Err(e) =
+                    device.add_address_v6(v6, config.prefix_v6.unwrap_or(crate::config::NODE_IPV6))
+                {
                     log::warn!("add ipv6 failed. {e:?},v6={v6}");
                 } else {
                     log::info!("mapped ipv6 addr={v6}");
@@ -159,9 +154,6 @@ async fn start_netlink0(
                     exit_route::exit_route(exit_node, if_index).await?;
                 }
             }
-
-            #[cfg(target_os = "macos")]
-            device.set_ignore_packet_info(true);
         }
         let device = Arc::new(device);
         let device_r = device.clone();
