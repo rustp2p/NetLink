@@ -1,3 +1,6 @@
+![](https://img.shields.io/github/downloads/rustp2p/NetLink/total?logo=github&label=Download)
+[![Apache-2.0](https://img.shields.io/github/license/rustp2p/NetLink?style=flat)](https://github.com/rustp2p/NetLink/blob/master/LICENSE)
+
 <p align="center">
   <a href="./README.zh-CN.md">简体中文</a> |
   <a href="./README.md">English</a>
