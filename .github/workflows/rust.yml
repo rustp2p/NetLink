@@ -12,6 +12,9 @@ defaults:
   run:
     # necessary for windows
     shell: bash
+permissions:
+  contents: write
+  packages: write
 
 jobs:
   #  test:
@@ -33,6 +36,7 @@ jobs:
   #        run: cargo test --verbose
 
   build:
+    name: Build ${{ matrix.TARGET }}
     strategy:
       fail-fast: false
       matrix:
@@ -93,11 +97,11 @@ jobs:
       OS: ${{ matrix.OS }}
       FEATURES: ${{ matrix.FEATURES }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Init submodules
-        uses: snickerbockers/submodules-init@v4
+        run: git submodule update --init --recursive --remote && git submodule status
       - name: Cargo cache
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -136,20 +140,15 @@ jobs:
             ls -lah
             whoami
             env | sort
-
             sudo pkg install -y git protobuf
             curl --proto 'https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             source $HOME/.cargo/env
-
             rustup set auto-self-update disable
-
             rustup install 1.77
             rustup default 1.77
-
             export CC=clang
             export CXX=clang++
             export CARGO_TERM_COLOR=always
-
             cargo build --release --verbose --target $TARGET
       - name: Install and configure dependencies
         if: ${{ ! endsWith(matrix.TARGET, 'freebsd') }}
@@ -163,7 +162,8 @@ jobs:
             #  curl -s musl.cc | grep mipsel
             case $TARGET in 
               mipsel-unknown-linux-musl)
-                MUSL_URI=mipsel-linux-musl-cross
+                MUSL_URI=mipsel-linux-muslsf-cross
+                URL=mipsel-linux-muslsf
                 ;;
               aarch64-unknown-linux-musl)
                 MUSL_URI=aarch64-linux-musl-cross
@@ -173,7 +173,7 @@ jobs:
                 ;;    
               armv7-unknown-linux-musleabi)
                 MUSL_URI=armv7m-linux-musleabi-cross
-                ;;   
+                ;; 
               arm-unknown-linux-musleabihf)
                 MUSL_URI=arm-linux-musleabihf-cross
                 ;;    
@@ -181,22 +181,28 @@ jobs:
                 MUSL_URI=arm-linux-musleabi-cross
                 ;;        
               mips-unknown-linux-musl)
-                MUSL_URI=mips-linux-musl-cross
+                MUSL_URI=mips-linux-muslsf-cross
+                URL=mips-linux-muslsf
                 ;;
             esac
           
           
             if [  -n "$MUSL_URI" ]; then
               mkdir -p ./musl_gcc 
-              wget -c https://musl.cc/$MUSL_URI.tgz -P ./musl_gcc/
-              tar zxf ./musl_gcc/$MUSL_URI.tgz -C ./musl_gcc/
-              sudo ln -s $(pwd)/musl_gcc/$MUSL_URI/bin/*gcc /usr/bin/
+              wget -c https://musl.cc/$MUSL_URI.tgz -P /opt/musl_gcc/
+              tar zxf /opt/musl_gcc/$MUSL_URI.tgz -C /opt/musl_gcc/
+              sudo ln -s /opt/musl_gcc/$MUSL_URI/bin/*gcc /usr/bin/
             fi
           fi
           if [[ $TARGET =~ ^mips.*$ ]]; then
-            # mips平台使用1.71.1版本
-            rustup install 1.71.1
-            rustup default 1.71.1  
+            cd /opt/musl_gcc/${URL}-cross/lib/gcc/${URL}/11.2.1
+            cp libgcc_eh.a libunwind.a
+            rustup toolchain install nightly-x86_64-unknown-linux-gnu
+            rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
+            RUST_LIB_SRC=$HOME/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/
+            if [[ -f $RUST_LIB_SRC/library/Cargo.lock && ! -f $RUST_LIB_SRC/Cargo.lock ]]; then 
+               cp -f $RUST_LIB_SRC/library/Cargo.lock $RUST_LIB_SRC/Cargo.lock
+            fi
           elif [[ $OS =~ ^windows.*$ ]]; then
             # Windows 平台使用 1.77 版本
             rustup install 1.77.0
@@ -224,11 +230,17 @@ jobs:
           linker = "arm-linux-musleabi-gcc"
           rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C","link-dead-code"]
           [target.mipsel-unknown-linux-musl]
-          linker = "mipsel-linux-musl-gcc"
-          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C","link-dead-code"]
+          linker = "mipsel-linux-muslsf-gcc"
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C", "link-arg=-static",
+          "-C", "relocation-model=static","-C", "link-arg=-no-pie","--cfg", "compiler_builtins_no_debug",
+          "-L", "/opt/musl_gcc/mipsel-linux-muslsf-cross/mipsel-linux-muslsf/lib",
+          "-L", "/opt/musl_gcc/mipsel-linux-muslsf-cross/lib/gcc/mipsel-linux-muslsf/11.2.1"]
           [target.mips-unknown-linux-musl]
-          linker = "mips-linux-musl-gcc"
-          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C","link-dead-code"]
+          linker = "mips-linux-muslsf-gcc"
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C", "link-arg=-static",
+          "-C", "relocation-model=static","-C", "link-arg=-no-pie","--cfg", "compiler_builtins_no_debug",
+          "-L", "/opt/musl_gcc/mips-linux-muslsf-cross/mips-linux-muslsf/lib",
+          "-L", "/opt/musl_gcc/mips-linux-muslsf-cross/lib/gcc/mips-linux-muslsf/11.2.1"]
           [target.x86_64-pc-windows-msvc]
           rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C","link-dead-code"]    
           [target.i686-pc-windows-msvc]
@@ -243,37 +255,56 @@ jobs:
           rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C","link-dead-code"]   
           EOF
       - name: Install rust target
-        if: ${{ ! endsWith(matrix.TARGET, 'freebsd') }}
+        if: ${{ ! endsWith(matrix.TARGET, 'freebsd') &&  ! startsWith(matrix.TARGET, 'mips') }}
         run: rustup target add $TARGET
       - name: Run build NetLink
         if: ${{ ! endsWith(matrix.TARGET, 'freebsd') }}
-        run: cargo build --release --verbose --target $TARGET --features $FEATURES
+        run: |
+          if [[ $TARGET =~ ^mips.*$ ]]; then
+            cargo +nightly build --release --verbose --target $TARGET -Z build-std=std,panic_abort --features $FEATURES
+          else
+            cargo build --release --verbose --target $TARGET --features $FEATURES
+          fi
+          ldd ./target/$TARGET/release/net_link || true
+          file ./target/$TARGET/release/net_link || true
       - name: List target
         run: find ./target
+      - name: Install UPX
+        if: ${{ runner.os == 'Linux' && !endsWith(matrix.target, 'freebsd') && !endsWith(matrix.target, 'gnueabihf') }}
+        uses: crazy-max/ghaction-upx@v3
+        with:
+          version: latest
+          install-only: true
+      - name: UPX
+        if: ${{ runner.os == 'Linux' && !endsWith(matrix.target, 'freebsd') && !endsWith(matrix.target, 'gnueabihf') }}
+        run: upx --lzma --best ./target/$TARGET/release/net_link
       - name: Compress
         run: |
           mkdir -p ./artifacts
           # windows is the only OS using a different convention for executable file name
           if [[ $OS =~ ^windows.*$ ]]; then
               EXEC_NETLINK=net_link.exe
-              NETLINK=netlink.exe
+              NETLINK="netlink-${TARGET}.exe"
           else
               EXEC_NETLINK=net_link
-              NETLINK=netlink
+              if [ "$TARGET" = "armv7-unknown-linux-gnueabihf" ] ; then
+                 NETLINK="netlink-synology-DS_213j"
+              else
+                 NETLINK="netlink-${TARGET}"
+              fi
           fi
           if [[ $GITHUB_REF_TYPE =~ ^tag$ ]]; then
             TAG=$GITHUB_REF_NAME
           else
             TAG=$GITHUB_SHA
           fi
-          mv ./target/$TARGET/release/$EXEC_NETLINK ./$NETLINK
-          tar -czf ./artifacts/netlink-$TARGET-$TAG.tar.gz ./$NETLINK
+          mv ./target/$TARGET/release/$EXEC_NETLINK ./artifacts/$NETLINK
       - name: List target NetLink
         run: find ./artifacts
       - name: Archive artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: NetLink
+          name: NetLink-${{ matrix.TARGET }}
           path: |
             ./artifacts/*
   # deploys to github releases on tag
@@ -283,17 +314,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
-          name: NetLink
           path: ./artifacts
       - name: List
         run: find ./artifacts
       - name: Release
         uses: svenstaro/upload-release-action@v2
         with:
-          repo_token: ${{ secrets.YOURTOKEN }}
-          file: ./artifacts/*.tar.gz
+          repo_token: ${{ secrets.GITHUB_TOKEN  }}
+          file: ./artifacts/*/netlink-*
           tag: ${{ github.ref }}
           overwrite: true
           file_glob: true
