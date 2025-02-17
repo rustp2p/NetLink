@@ -213,22 +213,22 @@ jobs:
           # some additional configuration for cross-compilation on linux
           cat >>~/.cargo/config.toml <<EOF
           [target.x86_64-unknown-linux-musl]
-          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C","link-dead-code"]
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]
           [target.aarch64-unknown-linux-musl]
           linker = "aarch64-linux-musl-gcc"
-          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C","link-dead-code"]
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]
           [target.armv7-unknown-linux-musleabihf]
           linker = "armv7l-linux-musleabihf-gcc"
-          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C","link-dead-code"]
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]
           [target.armv7-unknown-linux-musleabi]
           linker = "armv7m-linux-musleabi-gcc"
-          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C","link-dead-code"]
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]
           [target.arm-unknown-linux-musleabihf]
           linker = "arm-linux-musleabihf-gcc"
-          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C","link-dead-code"]   
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]   
           [target.arm-unknown-linux-musleabi]
           linker = "arm-linux-musleabi-gcc"
-          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C","link-dead-code"]
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]
           [target.mipsel-unknown-linux-musl]
           linker = "mipsel-linux-muslsf-gcc"
           rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C", "link-arg=-static",
@@ -242,17 +242,17 @@ jobs:
           "-L", "/opt/musl_gcc/mips-linux-muslsf-cross/mips-linux-muslsf/lib",
           "-L", "/opt/musl_gcc/mips-linux-muslsf-cross/lib/gcc/mips-linux-muslsf/11.2.1"]
           [target.x86_64-pc-windows-msvc]
-          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C","link-dead-code"]    
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]    
           [target.i686-pc-windows-msvc]
-          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C","link-dead-code"]      
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]      
           [target.x86_64-apple-darwin]
-          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C","link-dead-code"] 
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"] 
           [target.aarch64-apple-darwin]
-          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C","link-dead-code"]     
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]     
           [target.i686-unknown-linux-musl]
-          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C","link-dead-code"]    
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]    
           [target.i686-unknown-linux-gnu]
-          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols","-C","link-dead-code"]   
+          rustflags = ["-C", "target-feature=+crt-static","-C", "strip=symbols"]   
           EOF
       - name: Install rust target
         if: ${{ ! endsWith(matrix.TARGET, 'freebsd') &&  ! startsWith(matrix.TARGET, 'mips') }}
