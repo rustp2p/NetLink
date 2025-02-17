@@ -269,16 +269,7 @@ jobs:
           file ./target/$TARGET/release/net_link || true
       - name: List target
         run: find ./target
-      - name: Install UPX
-        if: ${{ runner.os == 'Linux' && !endsWith(matrix.target, 'freebsd') && !endsWith(matrix.target, 'gnueabihf') }}
-        uses: crazy-max/ghaction-upx@v3
-        with:
-          version: latest
-          install-only: true
-      - name: UPX
-        if: ${{ runner.os == 'Linux' && !endsWith(matrix.target, 'freebsd') && !endsWith(matrix.target, 'gnueabihf') }}
-        run: upx --lzma --best ./target/$TARGET/release/net_link
-      - name: Compress
+      - name: Package
         run: |
           mkdir -p ./artifacts
           # windows is the only OS using a different convention for executable file name
@@ -287,10 +278,7 @@ jobs:
               NETLINK="netlink-${TARGET}.exe"
           else
               EXEC_NETLINK=net_link
-              if [ "$TARGET" = "armv7-unknown-linux-gnueabihf" ] ; then
-                 NETLINK="netlink-synology-DS_213j"
-              else
-                 NETLINK="netlink-${TARGET}"
+              NETLINK="netlink-${TARGET}"
               fi
           fi
           if [[ $GITHUB_REF_TYPE =~ ^tag$ ]]; then
