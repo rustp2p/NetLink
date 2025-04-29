@@ -240,30 +240,30 @@ impl DataInterceptor for GroupCodeInterceptor {
         if let Ok(packet) = data.net_packet() {
             let group_code = packet.group_code();
             if group_code == self.current_group_code.0.as_ref() {
-                return false;
+                return true;
             }
             let group_code = match GroupCode::try_from(group_code) {
                 Ok(group_code) => group_code,
                 Err(e) => {
                     log::warn!("group code error {e:?} {}", data.remote_addr());
-                    return true;
+                    return false;
                 }
             };
             for x in &self.group_code_filter {
                 if x == &group_code {
-                    return false;
+                    return true;
                 }
             }
             if let Ok(str) = group_code.as_str() {
                 for x in &self.group_code_filter_regex {
                     if x.is_match(str) {
-                        return false;
+                        return true;
                     }
                 }
             }
         }
         // intercept
-        true
+        false
     }
 }
 
