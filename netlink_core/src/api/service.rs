@@ -3,7 +3,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use async_shutdown::ShutdownManager;
-use rustp2p::pipe::PipeWriter;
+use rustp2p::EndPoint;
 
 use crate::api::entity::{GroupItem, NetworkNatInfo, RouteItem};
 use crate::config::{Config, GroupCode};
@@ -12,7 +12,7 @@ use crate::route::ExternalRoute;
 
 pub struct NetLinkCoreApi {
     config: Config,
-    pipe: Arc<PipeWriter>,
+    pipe: Arc<EndPoint>,
     shutdown_manager: ShutdownManager<()>,
     external_route: Option<ExternalRoute>,
 }
@@ -68,15 +68,15 @@ impl NetLinkCoreApi {
     pub fn current_config(&self) -> &Config {
         &self.config
     }
-    pub(crate) fn pipe_writer(&self) -> &PipeWriter {
+    pub(crate) fn pipe_writer(&self) -> &Arc<EndPoint> {
         &self.pipe
     }
     pub fn current_info(&self) -> anyhow::Result<NetworkNatInfo> {
         let pipe_writer = self.pipe_writer();
-        let punch_info = pipe_writer.pipe_context().punch_info().read().clone();
+        let punch_info = pipe_writer.node_context().load_punch_info();
         let info = NetworkNatInfo {
             node_ip: pipe_writer
-                .pipe_context()
+                .node_context()
                 .load_id()
                 .map(|v| v.into())
                 .unwrap_or(Ipv4Addr::UNSPECIFIED),
@@ -133,7 +133,7 @@ impl NetLinkCoreApi {
     pub fn nodes_by_group(&self, group_code: &str) -> anyhow::Result<Vec<RouteItem>> {
         let pipe_writer = self.pipe_writer();
         let group_code = GroupCode::from_str(group_code)?;
-        let current_group_code = pipe_writer.current_group_code();
+        let current_group_code = pipe_writer.node_context().load_group_code();
         if group_code.0 == current_group_code {
             return self.current_nodes();
         }
@@ -186,7 +186,7 @@ impl NetLinkCoreApi {
     pub fn groups(&self) -> anyhow::Result<Vec<GroupItem>> {
         let pipe_writer = self.pipe_writer();
         let mut group_codes = Vec::new();
-        let current_group_code = pipe_writer.current_group_code();
+        let current_group_code = pipe_writer.node_context().load_group_code();
         let current_node_num = pipe_writer.nodes().len();
         group_codes.push(GroupItem {
             group_code: GroupCode(current_group_code).to_string(),

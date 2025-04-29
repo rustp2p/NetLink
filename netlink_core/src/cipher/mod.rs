@@ -20,13 +20,13 @@ impl Cipher {
     }
     pub fn decrypt(&self, extra_info: [u8; 12], payload: &mut [u8]) -> anyhow::Result<usize> {
         match self {
-            Cipher::Safe(c) => c.decrypt(extra_info, payload),
+            Cipher::Safe(c) => c.decrypt(extra_info, payload).map_err(Into::into),
             Cipher::Xor(c) => c.decrypt(extra_info, payload),
         }
     }
     pub fn encrypt(&self, extra_info: [u8; 12], payload: &mut [u8]) -> anyhow::Result<()> {
         match self {
-            Cipher::Safe(c) => c.encrypt(extra_info, payload),
+            Cipher::Safe(c) => c.encrypt(extra_info, payload).map_err(Into::into),
             Cipher::Xor(c) => c.encrypt(extra_info, payload),
         }
     }

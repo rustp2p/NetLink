@@ -4,8 +4,8 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use std::str::{FromStr, Utf8Error};
 
 use anyhow::Context;
-use rustp2p::config::LocalInterface;
-use rustp2p::pipe::PeerNodeAddress;
+use rustp2p::LocalInterface;
+use rustp2p::PeerNodeAddress;
 use serde::de::Visitor;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
@@ -316,7 +316,7 @@ impl ConfigBuilder {
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct GroupCode(pub rustp2p::protocol::node_id::GroupCode);
+pub struct GroupCode(pub rustp2p::node_id::GroupCode);
 
 impl GroupCode {
     pub fn as_str(&self) -> Result<&str, Utf8Error> {
@@ -332,7 +332,7 @@ impl TryFrom<&[u8]> for GroupCode {
     type Error = anyhow::Error;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let code = rustp2p::protocol::node_id::GroupCode::try_from(value)?;
+        let code = rustp2p::node_id::GroupCode::try_from(value)?;
         Ok(Self(code))
     }
 }
@@ -369,7 +369,7 @@ impl<'de> Deserialize<'de> for GroupCode {
     {
         struct GroupCodeVisitor;
 
-        impl<'de> Visitor<'de> for GroupCodeVisitor {
+        impl Visitor<'_> for GroupCodeVisitor {
             type Value = GroupCode;
 
             fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
@@ -429,7 +429,7 @@ impl<'de> Deserialize<'de> for PeerAddress {
     {
         struct PeerNodeAddressVisitor;
 
-        impl<'de> Visitor<'de> for PeerNodeAddressVisitor {
+        impl Visitor<'_> for PeerNodeAddressVisitor {
             type Value = PeerAddress;
 
             fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
@@ -448,9 +448,7 @@ impl<'de> Deserialize<'de> for PeerAddress {
     }
 }
 
-pub(crate) fn string_to_group_code(
-    input: &str,
-) -> anyhow::Result<rustp2p::protocol::node_id::GroupCode> {
+pub(crate) fn string_to_group_code(input: &str) -> anyhow::Result<rustp2p::node_id::GroupCode> {
     let mut array = [0u8; 16];
     let bytes = input.as_bytes();
     if bytes.len() > 16 {
@@ -461,7 +459,7 @@ pub(crate) fn string_to_group_code(
     Ok(array.into())
 }
 
-pub(crate) fn group_code_to_string(group_code: &rustp2p::protocol::node_id::GroupCode) -> String {
+pub(crate) fn group_code_to_string(group_code: &rustp2p::node_id::GroupCode) -> String {
     let mut vec = group_code.as_ref().to_vec();
     if let Some(pos) = vec.iter().rposition(|&x| x != 0) {
         vec.truncate(pos + 1);
@@ -472,7 +470,7 @@ pub(crate) fn group_code_to_string(group_code: &rustp2p::protocol::node_id::Grou
     }
 }
 pub(crate) fn group_code_to_str(
-    group_code: &rustp2p::protocol::node_id::GroupCode,
+    group_code: &rustp2p::node_id::GroupCode,
 ) -> Result<&str, Utf8Error> {
     let bytes = group_code.as_ref();
     let mut last = bytes.len();

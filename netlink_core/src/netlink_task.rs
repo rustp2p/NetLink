@@ -1,12 +1,8 @@
 use async_shutdown::ShutdownManager;
-use futures::FutureExt;
 use regex::Regex;
-use rustp2p::config::DataInterceptor;
-use rustp2p::pipe::{RecvResult, SendPacket};
 use rustp2p::{
-    config::{PipeConfig, TcpPipeConfig, UdpPipeConfig},
-    pipe::{Pipe, PipeLine, PipeWriter, RecvError, RecvUserData},
-    protocol::node_id::NodeID,
+    node_id::NodeID, Config as RustP2pConfig, DataInterceptor, EndPoint, RecvMetadata, RecvResult,
+    RecvUserData, TcpTunnelConfig, UdpTunnelConfig,
 };
 use std::{net::Ipv4Addr, sync::Arc};
 use tun_rs::AsyncDevice;
@@ -18,12 +14,12 @@ use crate::route::ExternalRoute;
 use crate::route::{exit_route, route_listen};
 #[cfg(target_os = "linux")]
 use tachyonix::TryRecvError;
-use tachyonix::{channel, Receiver, Sender};
+use tachyonix::{channel, Receiver};
 
 pub async fn start_netlink(
     config: Config,
     #[cfg(unix)] tun_fd: Option<u32>,
-) -> anyhow::Result<(Arc<PipeWriter>, Option<ExternalRoute>, ShutdownManager<()>)> {
+) -> anyhow::Result<(Arc<EndPoint>, Option<ExternalRoute>, ShutdownManager<()>)> {
     let shutdown_manager = ShutdownManager::<()>::new();
 
     match start_netlink0(
@@ -45,7 +41,7 @@ async fn start_netlink0(
     shutdown_manager: ShutdownManager<()>,
     config: Config,
     #[cfg(unix)] tun_fd: Option<u32>,
-) -> anyhow::Result<(Arc<PipeWriter>, Option<ExternalRoute>)> {
+) -> anyhow::Result<(Arc<EndPoint>, Option<ExternalRoute>)> {
     let config_attach = config.generate()?;
 
     let group_code_filter = config.group_code_filter.unwrap_or_default();
@@ -56,11 +52,11 @@ async fn start_netlink0(
         group_code_filter_regex,
     )?;
     let mtu = config.mtu.unwrap_or(crate::config::MTU);
-    let udp_config = UdpPipeConfig::default().set_simple_udp_port(config.port);
-    let tcp_config = TcpPipeConfig::default().set_tcp_port(config.port);
-    let mut pipe_config = PipeConfig::empty()
-        .set_udp_pipe_config(udp_config)
-        .set_tcp_pipe_config(tcp_config)
+    let udp_config = UdpTunnelConfig::default().set_simple_udp_port(config.port);
+    let tcp_config = TcpTunnelConfig::default().set_tcp_port(config.port);
+    let mut endpoint_config = RustP2pConfig::empty()
+        .set_udp_tunnel_config(udp_config)
+        .set_tcp_tunnel_config(tcp_config)
         .set_recycle_buf_cap(0)
         .set_direct_addrs(
             config
@@ -77,13 +73,16 @@ async fn start_netlink0(
         .set_udp_stun_servers(config.udp_stun.unwrap_or(default_udp_stun()))
         .set_tcp_stun_servers(config.tcp_stun.unwrap_or(default_tcp_stun()));
     if let Some(iface) = config_attach.iface_option {
-        pipe_config = pipe_config.set_default_interface(iface);
+        endpoint_config = endpoint_config.set_default_interface(iface);
     }
 
-    let mut pipe = Pipe::new(pipe_config).boxed().await?;
-    let writer = Arc::new(pipe.writer());
+    let endpoint = Arc::new(if let Some(interceptor) = interceptor {
+        EndPoint::with_interceptor(endpoint_config, interceptor).await?
+    } else {
+        EndPoint::new(endpoint_config).await?
+    });
 
-    let (sender, receiver) = channel::<RecvUserData>(256);
+    let (sender, receiver) = channel::<(RecvUserData, RecvMetadata)>(256);
     let mut external_route_op = None;
     #[cfg(unix)]
     assert!(tun_fd.is_none() || config.prefix > 0, "configuration error");
@@ -158,11 +157,11 @@ async fn start_netlink0(
         let device = Arc::new(device);
         let device_r = device.clone();
         let cipher = config_attach.cipher.clone();
-        let pipe_writer = writer.clone();
         let shutdown_manager_ = shutdown_manager.clone();
+        let endpoint_clone = endpoint.clone();
         tokio::spawn(shutdown_manager.wrap_cancel(async move {
             if let Err(e) = tun_recv(
-                &pipe_writer,
+                &endpoint_clone,
                 device_r,
                 config.node_ipv4,
                 external_route,
@@ -173,7 +172,7 @@ async fn start_netlink0(
             {
                 log::warn!("device.recv {e:?}")
             }
-            _ = pipe_writer.shutdown();
+            _ = endpoint_clone.shutdown();
             _ = shutdown_manager_.trigger_shutdown(());
         }));
         let cipher = config_attach.cipher.clone();
@@ -182,12 +181,14 @@ async fn start_netlink0(
         }));
     }
     log::info!("listen local port: {}", config.port);
-
+    let endpoint_clone = endpoint.clone();
     tokio::spawn(async move {
         loop {
-            match pipe.accept().await {
-                Ok(line) => {
-                    tokio::spawn(line_recv(line, sender.clone(), interceptor.clone()));
+            match endpoint.recv_from().await {
+                Ok(recv) => {
+                    if let Err(e) = sender.send(recv).await {
+                        log::warn!("sender.recv {e:?}");
+                    }
                 }
                 Err(e) => {
                     log::error!("pipe.accept {e:?}");
@@ -197,7 +198,7 @@ async fn start_netlink0(
         }
         _ = shutdown_manager.trigger_shutdown(());
     });
-    Ok((writer, external_route_op))
+    Ok((endpoint_clone, external_route_op))
 }
 
 fn gen_salt(src_id: &NodeID, dest_id: &NodeID) -> [u8; 12] {
@@ -265,37 +266,7 @@ impl DataInterceptor for GroupCodeInterceptor {
         true
     }
 }
-async fn line_recv(
-    mut line: PipeLine,
-    sender: Sender<RecvUserData>,
-    interceptor: Option<GroupCodeInterceptor>,
-) {
-    let mut list = Vec::with_capacity(16);
-    loop {
-        let rs = match line
-            .recv_multi_process(interceptor.as_ref(), &mut list)
-            .await
-        {
-            Ok(rs) => rs,
-            Err(e) => {
-                if let RecvError::Io(e) = e {
-                    log::warn!("recv_from {e:?} {:?}", line.remote_addr());
-                }
-                return;
-            }
-        };
-        if let Err(e) = rs {
-            log::warn!("recv_data_handle {e:?} {:?}", line.remote_addr());
-            continue;
-        }
 
-        for data in list.drain(..) {
-            if sender.send(data).await.is_err() {
-                break;
-            }
-        }
-    }
-}
 #[cfg(target_os = "linux")]
 struct Buffer(RecvUserData);
 #[cfg(target_os = "linux")]
@@ -462,7 +433,7 @@ async fn tun_recv(
 }
 #[cfg(not(target_os = "linux"))]
 async fn tun_send(
-    receiver: Receiver<RecvUserData>,
+    receiver: Receiver<(RecvUserData, RecvMetadata)>,
     cipher: Option<cipher::Cipher>,
     device: Arc<AsyncDevice>,
     mtu: u16,
@@ -470,41 +441,48 @@ async fn tun_send(
     tun_send0(receiver, cipher, device, mtu).await;
 }
 async fn tun_send0(
-    mut receiver: Receiver<RecvUserData>,
+    mut receiver: Receiver<(RecvUserData, RecvMetadata)>,
     cipher: Option<cipher::Cipher>,
     device: Arc<AsyncDevice>,
     _mtu: u16,
 ) {
-    while let Ok(mut buf) = receiver.recv().await {
+    while let Ok((mut recv_data, recv_meta)) = receiver.recv().await {
         if let Some(cipher) = cipher.as_ref() {
-            match cipher.decrypt(gen_salt(&buf.src_id(), &buf.dest_id()), buf.payload_mut()) {
+            match cipher.decrypt(
+                gen_salt(&recv_meta.src_id(), &recv_meta.dest_id()),
+                recv_data.payload_mut(),
+            ) {
                 Ok(len) => {
-                    if let Err(e) = device.send(&buf.payload()[..len]).await {
+                    if let Err(e) = device.send(&recv_data.payload()[..len]).await {
                         log::warn!("device.send {e:?}")
                     }
                 }
                 Err(e) => {
-                    log::warn!("decrypt {e:?},{:?}->{:?}", buf.src_id(), buf.dest_id())
+                    log::warn!(
+                        "decrypt {e:?},{:?}->{:?}",
+                        recv_meta.src_id(),
+                        recv_meta.dest_id()
+                    )
                 }
             }
-        } else if let Err(e) = device.send(buf.payload()).await {
+        } else if let Err(e) = device.send(recv_data.payload()).await {
             log::warn!("device.send {e:?}")
         }
     }
 }
 #[cfg(not(target_os = "linux"))]
 async fn tun_recv(
-    pipe_writer: &Arc<PipeWriter>,
+    endpoint: &Arc<EndPoint>,
     device: Arc<AsyncDevice>,
     self_ip: Ipv4Addr,
     external_route: ExternalRoute,
     cipher: Option<cipher::Cipher>,
     mtu: u16,
 ) -> anyhow::Result<()> {
-    tun_recv0(pipe_writer, device, self_ip, external_route, cipher, mtu).await
+    tun_recv0(endpoint, device, self_ip, external_route, cipher, mtu).await
 }
 async fn tun_recv0(
-    pipe_writer: &Arc<PipeWriter>,
+    endpoint: &Arc<EndPoint>,
     device: Arc<AsyncDevice>,
     self_ip: Ipv4Addr,
     external_route: ExternalRoute,
@@ -512,22 +490,16 @@ async fn tun_recv0(
     _mtu: u16,
 ) -> anyhow::Result<()> {
     let self_id: NodeID = self_ip.into();
-    let mut packet = Some(pipe_writer.allocate_send_packet());
+    let mut buf = [0u8; u16::MAX as usize];
     loop {
-        let mut send_packet = if let Some(send_packet) = packet.take() {
-            send_packet
-        } else {
-            pipe_writer.allocate_send_packet()
-        };
-        unsafe { send_packet.set_payload_len(send_packet.capacity()) };
-        let payload_len = device.recv(&mut send_packet).await?;
-        unsafe { send_packet.set_payload_len(payload_len) };
-        packet = tun_recv_handle(
+        let payload_len = device.recv(&mut buf).await?;
+        tun_recv_handle(
             &device,
             &cipher,
-            pipe_writer,
+            endpoint,
             &self_id,
-            send_packet,
+            &mut buf,
+            payload_len,
             &external_route,
         )
         .await;
@@ -536,16 +508,12 @@ async fn tun_recv0(
 async fn tun_recv_handle(
     _device: &Arc<AsyncDevice>,
     cipher: &Option<cipher::Cipher>,
-    pipe_writer: &Arc<PipeWriter>,
+    endpoint: &Arc<EndPoint>,
     self_id: &NodeID,
-    mut send_packet: SendPacket,
+    buf: &mut [u8],
+    payload_len: usize,
     external_route: &ExternalRoute,
-) -> Option<SendPacket> {
-    let payload_len = send_packet.len();
-    let buf: &mut [u8] = &mut send_packet;
-    if buf.len() < 20 {
-        return Some(send_packet);
-    }
+) {
     let mut v6 = false;
     let mut dest_ip = if buf[0] >> 4 != 4 {
         if let Some(ipv6_packet) = pnet_packet::ipv6::Ipv6Packet::new(buf) {
@@ -555,18 +523,18 @@ async fn tun_recv_handle(
             v6 = true;
             Ipv4Addr::from(last)
         } else {
-            return Some(send_packet);
+            return;
         }
     } else {
         Ipv4Addr::new(buf[16], buf[17], buf[18], buf[19])
     };
     if dest_ip.is_unspecified() {
-        return Some(send_packet);
+        return;
     }
 
     if dest_ip.is_broadcast() || dest_ip.is_multicast() {
         if v6 {
-            return Some(send_packet);
+            return;
         }
         dest_ip = Ipv4Addr::BROADCAST;
     }
@@ -580,7 +548,7 @@ async fn tun_recv_handle(
             if let Err(err) = process_myself(&buf[..payload_len], &_device).await {
                 log::error!("process myself err: {err:?}");
             }
-            return Some(send_packet);
+            return;
         }
     }
     let dest_id = if v6 {
@@ -590,17 +558,19 @@ async fn tun_recv_handle(
     } else {
         dest_ip.into()
     };
-    if let Some(cipher) = cipher.as_ref() {
-        send_packet.resize(payload_len + cipher.reserved_len(), 0);
-        if let Err(e) = cipher.encrypt(gen_salt(self_id, &dest_id), &mut send_packet) {
+    let total_len = if let Some(cipher) = cipher.as_ref() {
+        let total_len = payload_len + cipher.reserved_len();
+        if let Err(e) = cipher.encrypt(gen_salt(self_id, &dest_id), buf) {
             log::warn!("encrypt,{dest_ip:?} {e:?}");
-            return Some(send_packet);
+            return;
         }
-    }
-    if let Err(e) = pipe_writer.send_packet_to(send_packet, &dest_id).await {
+        total_len
+    } else {
+        payload_len
+    };
+    if let Err(e) = endpoint.send_to(&buf[..total_len], dest_id).await {
         log::debug!("discard,{dest_ip:?}:{:?} {e:?}", dest_id.as_ref())
     }
-    None
 }
 #[cfg(target_os = "macos")]
 async fn process_myself(payload: &[u8], device: &Arc<AsyncDevice>) -> anyhow::Result<()> {
