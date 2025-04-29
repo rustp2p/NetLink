@@ -1,3 +1,5 @@
+use std::io;
+
 pub fn simple_hash(input: &str) -> [u8; 32] {
     let mut result = [0u8; 32];
     let bytes = input.as_bytes();
@@ -37,14 +39,14 @@ impl XORCipher {
     pub fn reserved_len(&self) -> usize {
         0
     }
-    pub fn decrypt(&self, extra_info: [u8; 12], payload: &mut [u8]) -> anyhow::Result<usize> {
+    pub fn decrypt(&self, extra_info: [u8; 12], payload: &mut [u8]) -> io::Result<usize> {
         let key = &self.key;
         for (i, byte) in payload.iter_mut().enumerate() {
             *byte ^= key[i & 31] ^ extra_info[i & 7];
         }
         Ok(payload.len())
     }
-    pub fn encrypt(&self, extra_info: [u8; 12], payload: &mut [u8]) -> anyhow::Result<()> {
+    pub fn encrypt(&self, extra_info: [u8; 12], payload: &mut [u8]) -> io::Result<()> {
         let key = &self.key;
         for (i, byte) in payload.iter_mut().enumerate() {
             *byte ^= key[i & 31] ^ extra_info[i & 7];

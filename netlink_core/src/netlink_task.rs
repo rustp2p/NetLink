@@ -552,7 +552,7 @@ async fn tun_recv_handle(
     };
     let total_len = if let Some(cipher) = cipher.as_ref() {
         let total_len = payload_len + cipher.reserved_len();
-        if let Err(e) = cipher.encrypt(gen_salt(self_id, &dest_id), buf) {
+        if let Err(e) = cipher.encrypt(gen_salt(self_id, &dest_id), &mut buf[..total_len]) {
             log::warn!("encrypt,{dest_ip:?} {e:?}");
             return;
         }
