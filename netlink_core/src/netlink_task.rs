@@ -282,7 +282,7 @@ impl AsMut<[u8]> for Buffer {
     }
 }
 #[cfg(target_os = "linux")]
-impl tun_rs::platform::ExpandBuffer for Buffer {
+impl tun_rs::ExpandBuffer for Buffer {
     fn buf_capacity(&self) -> usize {
         self.0.original_bytes().capacity()
     }
@@ -297,7 +297,7 @@ impl tun_rs::platform::ExpandBuffer for Buffer {
 }
 #[cfg(target_os = "linux")]
 async fn tun_send(
-    mut receiver: Receiver<RecvUserData>,
+    mut receiver: Receiver<(RecvUserData, RecvMetadata)>,
     cipher: Option<cipher::Cipher>,
     device: Arc<AsyncDevice>,
     mtu: u16,
@@ -307,10 +307,10 @@ async fn tun_send(
         tun_send0(receiver, cipher, device, mtu).await;
         return;
     }
-    let mut table = tun_rs::platform::GROTable::default();
-    let mut bufs = Vec::with_capacity(tun_rs::platform::IDEAL_BATCH_SIZE);
+    let mut table = tun_rs::GROTable::default();
+    let mut bufs = Vec::with_capacity(tun_rs::IDEAL_BATCH_SIZE);
 
-    while let Ok(data) = receiver.recv().await {
+    while let Ok((data, meta)) = receiver.recv().await {
         let first_offset = data.offset();
         let mut op = Some(data);
         let mut next_data: Option<RecvUserData> = None;
@@ -319,14 +319,14 @@ async fn tun_send(
             if let Some(cipher) = cipher.as_ref() {
                 let current_offset = data.offset();
                 match cipher.decrypt(
-                    gen_salt(&data.src_id(), &data.dest_id()),
+                    gen_salt(&meta.src_id(), &meta.dest_id()),
                     data.payload_mut(),
                 ) {
                     Ok(len) => {
                         data.original_bytes_mut().truncate(current_offset + len);
                     }
                     Err(e) => {
-                        log::warn!("decrypt {e:?},{:?}->{:?}", data.src_id(), data.dest_id());
+                        log::warn!("decrypt {e:?},{:?}->{:?}", meta.src_id(), meta.dest_id());
                         break;
                     }
                 }
@@ -341,7 +341,7 @@ async fn tun_send(
                 break;
             }
             match receiver.try_recv() {
-                Ok(new_buf) => _ = op.replace(new_buf),
+                Ok((recv_data,_recv_meta)) => _ = op.replace(recv_data),
                 Err(e) => match e {
                     TryRecvError::Empty => break,
                     TryRecvError::Closed => {
@@ -373,7 +373,7 @@ async fn tun_send(
 
 #[cfg(target_os = "linux")]
 async fn tun_recv(
-    pipe_writer: &Arc<PipeWriter>,
+    pipe_writer: &Arc<EndPoint>,
     device: Arc<AsyncDevice>,
     self_ip: Ipv4Addr,
     external_route: ExternalRoute,
@@ -384,14 +384,13 @@ async fn tun_recv(
         return tun_recv0(pipe_writer, device, self_ip, external_route, cipher, mtu).await;
     }
     let self_id: NodeID = self_ip.into();
-    let mut original_buffer = vec![0; tun_rs::platform::VIRTIO_NET_HDR_LEN + 65535];
-    use tun_rs::platform::IDEAL_BATCH_SIZE;
+    let mut original_buffer = vec![0; tun_rs::VIRTIO_NET_HDR_LEN + 65535];
+    use tun_rs::IDEAL_BATCH_SIZE;
     let mut bufs = Vec::with_capacity(IDEAL_BATCH_SIZE);
     let mut sizes = vec![0; IDEAL_BATCH_SIZE];
     while bufs.len() < IDEAL_BATCH_SIZE {
-        let mut send_packet = pipe_writer.allocate_send_packet();
-        unsafe { send_packet.set_payload_len(send_packet.capacity()) };
-        bufs.push(send_packet);
+        let buf = vec![0u8; u16::MAX as usize];
+        bufs.push(buf);
     }
     loop {
         let num = device
@@ -411,23 +410,18 @@ async fn tun_recv(
         };
 
         for i in 0..num {
-            let mut new_packet = pipe_writer.allocate_send_packet();
-            unsafe { new_packet.set_payload_len(new_packet.capacity()) };
-            let mut send_packet = std::mem::replace(&mut bufs[i], new_packet);
             let payload_len = sizes[i];
-            unsafe { send_packet.set_payload_len(payload_len) };
-            if let Some(send_packet) = tun_recv_handle(
+            let buf = &mut bufs[i];
+            tun_recv_handle(
                 &device,
                 &cipher,
                 pipe_writer,
                 &self_id,
-                send_packet,
+                buf,
+                payload_len,
                 &external_route,
             )
             .await
-            {
-                pipe_writer.release_send_packet(send_packet);
-            }
         }
     }
 }
