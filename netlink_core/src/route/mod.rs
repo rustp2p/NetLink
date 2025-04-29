@@ -2,9 +2,7 @@ use parking_lot::Mutex;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 
-#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 pub mod exit_route;
-#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 pub mod route_listen;
 fn prefix_to_mask(prefix: u8) -> u32 {
     let mask: u32 = if prefix == 0 {

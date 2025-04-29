@@ -10,7 +10,6 @@ use tun_rs::AsyncDevice;
 use crate::cipher;
 use crate::config::{default_tcp_stun, default_udp_stun, Config, GroupCode};
 use crate::route::ExternalRoute;
-#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use crate::route::{exit_route, route_listen};
 #[cfg(target_os = "linux")]
 use tachyonix::TryRecvError;
@@ -141,7 +140,6 @@ async fn start_netlink0(
             let if_index = device.if_index().unwrap();
             let name = device.name().unwrap();
             log::info!("device index={if_index},name={name}",);
-            #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
             if config.listen_route.unwrap_or(true) {
                 route_listen::route_listen(
                     shutdown_manager.clone(),
@@ -341,7 +339,7 @@ async fn tun_send(
                 break;
             }
             match receiver.try_recv() {
-                Ok((recv_data,_recv_meta)) => _ = op.replace(recv_data),
+                Ok((recv_data, _recv_meta)) => _ = op.replace(recv_data),
                 Err(e) => match e {
                     TryRecvError::Empty => break,
                     TryRecvError::Closed => {
