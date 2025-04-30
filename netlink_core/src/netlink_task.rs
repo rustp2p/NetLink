@@ -310,10 +310,10 @@ async fn tun_send(
 
     while let Ok((data, meta)) = receiver.recv().await {
         let first_offset = data.offset();
-        let mut op = Some(data);
+        let mut op = Some((data, meta));
         let mut next_data: Option<RecvUserData> = None;
         loop {
-            let mut data = op.take().unwrap();
+            let (mut data, meta) = op.take().unwrap();
             if let Some(cipher) = cipher.as_ref() {
                 let current_offset = data.offset();
                 match cipher.decrypt(
@@ -324,7 +324,12 @@ async fn tun_send(
                         data.original_bytes_mut().truncate(current_offset + len);
                     }
                     Err(e) => {
-                        log::warn!("decrypt {e:?},{:?}->{:?}", meta.src_id(), meta.dest_id());
+                        log::warn!(
+                            "decrypt {e:?},{:?},{:?}->{:?}",
+                            meta.route_key(),
+                            meta.src_id(),
+                            meta.dest_id()
+                        );
                         break;
                     }
                 }
@@ -339,7 +344,7 @@ async fn tun_send(
                 break;
             }
             match receiver.try_recv() {
-                Ok((recv_data, _recv_meta)) => _ = op.replace(recv_data),
+                Ok((recv_data, recv_meta)) => _ = op.replace((recv_data, recv_meta)),
                 Err(e) => match e {
                     TryRecvError::Empty => break,
                     TryRecvError::Closed => {
