@@ -279,7 +279,6 @@ jobs:
           else
               EXEC_NETLINK=net_link
               NETLINK="netlink-${TARGET}"
-              fi
           fi
           if [[ $GITHUB_REF_TYPE =~ ^tag$ ]]; then
             TAG=$GITHUB_REF_NAME
