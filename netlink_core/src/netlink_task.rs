@@ -1,8 +1,8 @@
 use async_shutdown::ShutdownManager;
 use regex::Regex;
 use rustp2p::{
-    node_id::NodeID, Config as RustP2pConfig, DataInterceptor, EndPoint, RecvMetadata, RecvResult,
-    RecvUserData, TcpTunnelConfig, UdpTunnelConfig,
+    node_id::NodeID, Config as RustP2pConfig, DataInterceptor, EndPoint, RecvResult,
+    TcpTunnelConfig, UdpTunnelConfig,
 };
 use std::{net::Ipv4Addr, sync::Arc};
 use tun_rs::AsyncDevice;
@@ -11,9 +11,6 @@ use crate::cipher;
 use crate::config::{default_tcp_stun, default_udp_stun, Config, GroupCode};
 use crate::route::ExternalRoute;
 use crate::route::{exit_route, route_listen};
-#[cfg(target_os = "linux")]
-use tachyonix::TryRecvError;
-use tachyonix::{channel, Receiver};
 
 pub async fn start_netlink(
     config: Config,
@@ -81,7 +78,6 @@ async fn start_netlink0(
         EndPoint::new(endpoint_config).await?
     });
 
-    let (sender, receiver) = channel::<(RecvUserData, RecvMetadata)>(256);
     let mut external_route_op = None;
     #[cfg(unix)]
     assert!(tun_fd.is_none() || config.prefix > 0, "configuration error");
@@ -174,29 +170,13 @@ async fn start_netlink0(
             _ = shutdown_manager_.trigger_shutdown(());
         }));
         let cipher = config_attach.cipher.clone();
+        let endpoint_clone = endpoint.clone();
         tokio::spawn(shutdown_manager.wrap_cancel(async move {
-            tun_send(receiver, cipher, device, mtu).await;
+            tun_send(endpoint_clone, cipher, device, mtu).await;
         }));
     }
     log::info!("listen local port: {}", config.port);
-    let endpoint_clone = endpoint.clone();
-    tokio::spawn(async move {
-        loop {
-            match endpoint.recv_from().await {
-                Ok(recv) => {
-                    if let Err(e) = sender.send(recv).await {
-                        log::warn!("sender.recv {e:?}");
-                    }
-                }
-                Err(e) => {
-                    log::error!("pipe.accept {e:?}");
-                    break;
-                }
-            }
-        }
-        _ = shutdown_manager.trigger_shutdown(());
-    });
-    Ok((endpoint_clone, external_route_op))
+    Ok((endpoint, external_route_op))
 }
 
 fn gen_salt(src_id: &NodeID, dest_id: &NodeID) -> [u8; 12] {
@@ -266,7 +246,7 @@ impl DataInterceptor for GroupCodeInterceptor {
 }
 
 #[cfg(target_os = "linux")]
-struct Buffer(RecvUserData);
+struct Buffer(rustp2p::RecvUserData);
 #[cfg(target_os = "linux")]
 impl AsRef<[u8]> for Buffer {
     fn as_ref(&self) -> &[u8] {
@@ -295,23 +275,23 @@ impl tun_rs::ExpandBuffer for Buffer {
 }
 #[cfg(target_os = "linux")]
 async fn tun_send(
-    mut receiver: Receiver<(RecvUserData, RecvMetadata)>,
+    endpoint: Arc<EndPoint>,
     cipher: Option<cipher::Cipher>,
     device: Arc<AsyncDevice>,
     mtu: u16,
 ) {
     log::info!("vnet_hdr={},udp_gso={}", device.tcp_gso(), device.udp_gso());
     if !device.tcp_gso() {
-        tun_send0(receiver, cipher, device, mtu).await;
+        tun_send0(endpoint, cipher, device, mtu).await;
         return;
     }
     let mut table = tun_rs::GROTable::default();
     let mut bufs = Vec::with_capacity(tun_rs::IDEAL_BATCH_SIZE);
 
-    while let Ok((data, meta)) = receiver.recv().await {
+    while let Ok((data, meta)) = endpoint.recv_from().await {
         let first_offset = data.offset();
         let mut op = Some((data, meta));
-        let mut next_data: Option<RecvUserData> = None;
+        let mut next_data = None;
         loop {
             let (mut data, meta) = op.take().unwrap();
             if let Some(cipher) = cipher.as_ref() {
@@ -343,14 +323,10 @@ async fn tun_send(
             if bufs.len() == bufs.capacity() {
                 break;
             }
-            match receiver.try_recv() {
+            match endpoint.try_recv_from() {
                 Ok((recv_data, recv_meta)) => _ = op.replace((recv_data, recv_meta)),
-                Err(e) => match e {
-                    TryRecvError::Empty => break,
-                    TryRecvError::Closed => {
-                        return;
-                    }
-                },
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(_e) => return,
             }
         }
         if !bufs.is_empty() {
@@ -430,20 +406,20 @@ async fn tun_recv(
 }
 #[cfg(not(target_os = "linux"))]
 async fn tun_send(
-    receiver: Receiver<(RecvUserData, RecvMetadata)>,
+    endpoint: Arc<EndPoint>,
     cipher: Option<cipher::Cipher>,
     device: Arc<AsyncDevice>,
     mtu: u16,
 ) {
-    tun_send0(receiver, cipher, device, mtu).await;
+    tun_send0(endpoint, cipher, device, mtu).await;
 }
 async fn tun_send0(
-    mut receiver: Receiver<(RecvUserData, RecvMetadata)>,
+    endpoint: Arc<EndPoint>,
     cipher: Option<cipher::Cipher>,
     device: Arc<AsyncDevice>,
     _mtu: u16,
 ) {
-    while let Ok((mut recv_data, recv_meta)) = receiver.recv().await {
+    while let Ok((mut recv_data, recv_meta)) = endpoint.recv_from().await {
         if let Some(cipher) = cipher.as_ref() {
             match cipher.decrypt(
                 gen_salt(&recv_meta.src_id(), &recv_meta.dest_id()),
