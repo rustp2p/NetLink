@@ -1,7 +1,7 @@
 workspace = { members = ["netlink_core", "netlink_http"] }
 [package]
 name = "net_link"
-version = "0.2.12"
+version = "0.3.0"
 edition = "2021"
 license = "Apache-2.0"
 readme = "README.md"
@@ -9,7 +9,7 @@ description = "NetLink is a decentralized networking tool built on the 'rustp2p'
 repository = "https://github.com/rustp2p/NetLink"
 
 [dependencies]
-netlink_http = { path = "netlink_http" }
+netlink_http = { path = "netlink_http", version="0.2.8" }
 
 
 clap = { version = "=4.0.32", features = ["derive"] }
