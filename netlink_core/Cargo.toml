@@ -3,7 +3,6 @@ name = "netlink_core"
 version = "0.3.0"
 edition = "2021"
 license = "Apache-2.0"
-readme = "README.md"
 description = "NetLink is a decentralized networking tool built on the 'rustp2p' library."
 repository = "https://github.com/rustp2p/NetLink"
 
