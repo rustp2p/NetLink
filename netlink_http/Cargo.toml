@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 
-netlink_core = { path = "../netlink_core" }
+netlink_core = { path = "../netlink_core", version="0.3.0" }
 salvo = { version = "=0.63.1", features = ["cors", "anyhow"] }
 serde_yaml = "0.9"
 mime_guess = { version = "2.0" }
