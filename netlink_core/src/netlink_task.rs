@@ -62,7 +62,7 @@ async fn start_netlink0(
                 .map(|v| v.0)
                 .collect(),
         )
-        .set_recv_buffer_size(mtu as usize + 1024)
+        .set_recv_buffer_size(65536)
         .set_send_buffer_size(mtu as usize + 1024)
         .set_group_code(config.group_code.0)
         .set_node_id(config.node_ipv4.into())
