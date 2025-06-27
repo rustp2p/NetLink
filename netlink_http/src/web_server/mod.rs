@@ -476,7 +476,7 @@ pub async fn start<A: StaticFileAssets, I: Handler>(
     let root_router = root_router.push(router);
     let root_router = root_router.push(Router::new().get(StaticFileHandler(static_assets.clone())));
     let root_router = root_router
-        .push(Router::with_path("<**path>").get(StaticFileHandler(static_assets.clone())));
+        .push(Router::with_path("{**path}").get(StaticFileHandler(static_assets.clone())));
     tokio::spawn(async move {
         log::info!("http service has served on http://{}", http_config.addr);
         Server::new(acceptor).serve(root_router).await;
@@ -523,9 +523,8 @@ impl<A: StaticFileAssets> Handler for StaticFileHandler<A> {
         res: &mut Response,
         _ctrl: &mut FlowCtrl,
     ) {
-        // salvo 0.63 must use "**path" while higher version uses "path" index
         let mut path = req
-            .param::<String>("**path")
+            .param::<String>("path")
             .unwrap_or("index.html".to_string());
         if path.is_empty() {
             path = "index.html".to_string();
