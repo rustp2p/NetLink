@@ -99,12 +99,20 @@ async fn start_netlink0(
             device_builder = device_builder
                 .ipv4(config.node_ipv4, config.prefix, None)
                 .mtu(mtu);
-            if let Some(name) = config.tun_name {
+            if let Some(name) = &config.tun_name {
                 device_builder = device_builder.name(name);
             }
             #[cfg(windows)]
             {
-                device_builder = device_builder.ring_capacity(4 * 1024 * 1024).metric(0);
+                device_builder = device_builder
+                    .ring_capacity(8 * 1024 * 1024)
+                    .metric(0)
+                    .device_guid(
+                        config
+                            .tun_name
+                            .map(hash_str_to_u128)
+                            .unwrap_or(184891423852740613562132735076188020489),
+                    );
             }
             #[cfg(target_os = "linux")]
             {
@@ -243,6 +251,23 @@ impl DataInterceptor for GroupCodeInterceptor {
         // intercept
         false
     }
+}
+#[cfg(windows)]
+fn hash_str_to_u128(opt: String) -> u128 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher1 = DefaultHasher::new();
+    let mut hasher2 = DefaultHasher::new();
+
+    opt.hash(&mut hasher1);
+    217086439.hash(&mut hasher1);
+    opt.hash(&mut hasher2);
+    506273941.hash(&mut hasher2);
+
+    let high = hasher1.finish();
+    let low = hasher2.finish();
+
+    ((high as u128) << 64) | (low as u128)
 }
 
 #[cfg(target_os = "linux")]
