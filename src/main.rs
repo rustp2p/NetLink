@@ -209,7 +209,7 @@ fn block_on<F: Future>(worker_threads: usize, f: F) -> F::Output {
 }
 
 async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
-    log::debug!("args = {:?}",args);
+    log::debug!("args = {:?}", args);
     if let Some(args) = args {
         let Args {
             peer,
@@ -351,7 +351,6 @@ async fn start_by_config(
             return Err(anyhow::anyhow!("The backend command port has already been used. Please use 'cmd --api-addr' to change the port, err={e}"));
         }
     }
-
 
     if api_service.exist_config() {
         api_service.open().await?;
