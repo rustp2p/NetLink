@@ -532,7 +532,7 @@ impl<A: StaticFileAssets> Handler for StaticFileHandler<A> {
         }
         match read_file(&self.0, &path).await {
             Some((body, mime)) => {
-                _ = res.body(body.into()).add_header("Content-Type", mime, true);
+                _ = res.body(body).add_header("Content-Type", mime, true);
             }
             None => {
                 if path == "index.html" {
@@ -540,7 +540,7 @@ impl<A: StaticFileAssets> Handler for StaticFileHandler<A> {
                     return;
                 }
                 if let Some((body, mime)) = read_file(&self.0, "index.html").await {
-                    _ = res.body(body.into()).add_header("Content-Type", mime, true);
+                    _ = res.body(body).add_header("Content-Type", mime, true);
                 } else {
                     res.status_code(StatusCode::NOT_FOUND);
                 }

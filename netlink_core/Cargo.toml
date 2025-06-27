@@ -1,6 +1,6 @@
 [package]
 name = "netlink_core"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 license = "Apache-2.0"
 description = "NetLink is a decentralized networking tool built on the 'rustp2p' library."
@@ -18,7 +18,7 @@ crate-type = [
 [dependencies]
 anyhow = "1"
 serde = { version = "1.0", features = ["derive"] }
-rustp2p = { version = "0.3.0", features = ["chacha20-poly1305-ring", "aes-gcm-ring"] }
+rustp2p = { version = "0.3.1", features = ["chacha20-poly1305-ring", "aes-gcm-ring"] }
 
 libc = "0.2"
 parking_lot = "0.12"
@@ -35,8 +35,8 @@ tachyonix = "0.3"
 async-trait = "0.1"
 regex = "1.11"
 
-route_manager = { version = "0.1.4", features = ["async"] }
+route_manager = { version = "0.2.0", features = ["async"] }
 
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_NetworkManagement_Ndis"] }
+windows-sys = { version = "0.60.2", features = ["Win32_NetworkManagement_Ndis"] }

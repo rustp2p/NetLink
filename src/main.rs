@@ -209,6 +209,7 @@ fn block_on<F: Future>(worker_threads: usize, f: F) -> F::Output {
 }
 
 async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
+    log::debug!("args = {:?}",args);
     if let Some(args) = args {
         let Args {
             peer,
@@ -351,19 +352,14 @@ async fn start_by_config(
         }
     }
 
-    let (tx, mut quit) = tokio::sync::mpsc::channel::<()>(1);
 
-    ctrlc2::set_async_handler(async move {
-        let _ = tx.send(()).await;
-    })
-    .await;
     if api_service.exist_config() {
         api_service.open().await?;
     } else {
         #[cfg(not(feature = "web"))]
         Err(anyhow::anyhow!("Configuration not found"))?
     }
-    _ = quit.recv().await;
+    _ = tokio::signal::ctrl_c().await;
     _ = api_service.close();
     log::info!("exit!!!!");
     Ok(())
