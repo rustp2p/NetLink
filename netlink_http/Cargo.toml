@@ -1,6 +1,6 @@
 [package]
 name = "netlink_http"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 license = "Apache-2.0"
 readme = "README.md"
@@ -11,7 +11,7 @@ repository = "https://github.com/rustp2p/NetLink"
 
 [dependencies]
 
-netlink_core = { path = "../netlink_core", version="0.3.1" }
+netlink_core = { path = "../netlink_core", version="0.3.2" }
 salvo = { version = "0.79.0", features = ["cors", "anyhow"] }
 mime_guess = { version = "2.0" }
 parking_lot = "0.12"

@@ -6,10 +6,11 @@ use rustp2p::{
     node_id::NodeID, Config as RustP2pConfig, DataInterceptor, EndPoint, KcpListener, KcpStream,
     RecvResult, TcpTunnelConfig, UdpTunnelConfig,
 };
+use std::collections::HashSet;
 use std::{net::Ipv4Addr, sync::Arc};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use tun_rs::{AsyncDevice};
+use tun_rs::AsyncDevice;
 
 use crate::cipher;
 use crate::config::{default_tcp_stun, default_udp_stun, Config, GroupCode};
@@ -169,6 +170,9 @@ async fn start_netlink0(
         let listener = endpoint.kcp_listener();
         let map = Arc::new(DashMap::new());
         let map1 = map.clone();
+        let kcp_for_all = config.kcp_for_all.unwrap_or_default();
+        let kcp_nodes: Option<HashSet<Ipv4Addr>> =
+            config.kcp_nodes.clone().map(|v| v.into_iter().collect());
         tokio::spawn(shutdown_manager.wrap_cancel(async move {
             if let Err(e) = start_kcp_listener(listener, device_s, map1).await {
                 log::warn!("start kcp listener failed. {e:?}");
@@ -178,6 +182,8 @@ async fn start_netlink0(
             if let Err(e) = tun_recv(
                 &endpoint_clone,
                 map,
+                kcp_for_all,
+                kcp_nodes.unwrap_or_default(),
                 device_r,
                 config.node_ipv4,
                 external_route,
@@ -393,6 +399,8 @@ async fn tun_send(
 async fn tun_recv(
     pipe_writer: &Arc<EndPoint>,
     map: Arc<DashMap<Ipv4Addr, Sender<Vec<u8>>>>,
+    kcp_for_all: bool,
+    kcp_nodes: HashSet<Ipv4Addr>,
     device: Arc<AsyncDevice>,
     self_ip: Ipv4Addr,
     external_route: ExternalRoute,
@@ -403,6 +411,8 @@ async fn tun_recv(
         return tun_recv0(
             pipe_writer,
             map,
+            kcp_for_all,
+            kcp_nodes,
             device,
             self_ip,
             external_route,
@@ -443,6 +453,8 @@ async fn tun_recv(
             tun_recv_handle(
                 &device,
                 &map,
+                kcp_for_all,
+                &kcp_nodes,
                 &cipher,
                 pipe_writer,
                 &self_id,
@@ -497,17 +509,32 @@ async fn tun_send0(
 async fn tun_recv(
     endpoint: &Arc<EndPoint>,
     map: Arc<DashMap<Ipv4Addr, Sender<Vec<u8>>>>,
+    kcp_for_all: bool,
+    kcp_nodes: HashSet<Ipv4Addr>,
     device: Arc<AsyncDevice>,
     self_ip: Ipv4Addr,
     external_route: ExternalRoute,
     cipher: Option<cipher::Cipher>,
     mtu: u16,
 ) -> anyhow::Result<()> {
-    tun_recv0(endpoint, map, device, self_ip, external_route, cipher, mtu).await
+    tun_recv0(
+        endpoint,
+        map,
+        kcp_for_all,
+        kcp_nodes,
+        device,
+        self_ip,
+        external_route,
+        cipher,
+        mtu,
+    )
+    .await
 }
 async fn tun_recv0(
     endpoint: &Arc<EndPoint>,
     map: Arc<DashMap<Ipv4Addr, Sender<Vec<u8>>>>,
+    kcp_for_all: bool,
+    kcp_nodes: HashSet<Ipv4Addr>,
     device: Arc<AsyncDevice>,
     self_ip: Ipv4Addr,
     external_route: ExternalRoute,
@@ -521,6 +548,8 @@ async fn tun_recv0(
         tun_recv_handle(
             &device,
             &map,
+            kcp_for_all,
+            &kcp_nodes,
             &cipher,
             endpoint,
             &self_id,
@@ -534,6 +563,8 @@ async fn tun_recv0(
 async fn tun_recv_handle(
     device: &Arc<AsyncDevice>,
     map: &DashMap<Ipv4Addr, Sender<Vec<u8>>>,
+    kcp_for_all: bool,
+    kcp_nodes: &HashSet<Ipv4Addr>,
     cipher: &Option<cipher::Cipher>,
     endpoint: &Arc<EndPoint>,
     self_id: &NodeID,
@@ -601,11 +632,13 @@ async fn tun_recv_handle(
         }
         drop(sender);
         map.remove(&dest_ip);
-    } else if endpoint.lookup_route_one(&dest_id).is_some() && false {
+    } else if (kcp_for_all || kcp_nodes.contains(&dest_ip))
+        && endpoint.lookup_route_one(&dest_id).is_some()
+    {
         let (s, r) = tokio::sync::mpsc::channel(1024);
         _ = s.send(buf[..total_len].to_vec()).await;
         map.insert(dest_ip, s);
-        let  stream = endpoint.open_kcp_stream(dest_id).unwrap();
+        let stream = endpoint.open_kcp_stream(dest_id).unwrap();
         let device = device.clone();
         log::info!("open kcp stream {dest_ip}");
         tokio::spawn(async move {
@@ -645,12 +678,15 @@ async fn start_kcp_handle(
     #[cfg(target_os = "linux")]
     let mut table = tun_rs::GROTable::default();
     let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
-    
+
     loop {
         tokio::select! {
             next = framed.next() => {
                 if let Some(next) = next {
                     let buf = next?;
+                    if buf.is_empty(){
+                        break;
+                    }
                     #[cfg(target_os = "linux")]
                     device_send(&device,&mut table,buf).await?;
                     #[cfg(not(target_os = "linux"))]
@@ -671,11 +707,16 @@ async fn start_kcp_handle(
     Ok(())
 }
 #[cfg(target_os = "linux")]
-async fn device_send(device: &AsyncDevice,table: &mut tun_rs::GROTable, buf: bytes::BytesMut) -> std::io::Result<()> {
+async fn device_send(
+    device: &AsyncDevice,
+    table: &mut tun_rs::GROTable,
+    buf: bytes::BytesMut,
+) -> std::io::Result<()> {
     let mut bytes_mut = bytes::BytesMut::with_capacity(tun_rs::VIRTIO_NET_HDR_LEN + buf.len());
-    bytes_mut.resize(tun_rs::VIRTIO_NET_HDR_LEN , 0);
+    bytes_mut.resize(tun_rs::VIRTIO_NET_HDR_LEN, 0);
     bytes_mut.extend_from_slice(&buf);
-    device.send_multiple(table, &mut [bytes_mut], tun_rs::VIRTIO_NET_HDR_LEN)
+    device
+        .send_multiple(table, &mut [bytes_mut], tun_rs::VIRTIO_NET_HDR_LEN)
         .await?;
     Ok(())
 }

@@ -1,6 +1,6 @@
 [package]
 name = "netlink_core"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 license = "Apache-2.0"
 description = "NetLink is a decentralized networking tool built on the 'rustp2p' library."
@@ -18,8 +18,8 @@ crate-type = [
 [dependencies]
 anyhow = "1"
 serde = { version = "1.0", features = ["derive"] }
-rustp2p = { version = "0.3.1", features = ["chacha20-poly1305-ring", "aes-gcm-ring","use-kcp"] }
-#rustp2p = { path = "../../rustp2p", features = ["chacha20-poly1305-ring", "aes-gcm-ring","use-kcp"] }
+#rustp2p = { version = "0.3.1", features = ["chacha20-poly1305-ring", "aes-gcm-ring","use-kcp"] }
+rustp2p = { git = "https://github.com/rustp2p/rustp2p", features = ["chacha20-poly1305-ring", "aes-gcm-ring","use-kcp"] }
 
 bytes = "1.10"
 tokio-util = {version = "0.7.15",features = ["full"]}
