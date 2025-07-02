@@ -70,7 +70,7 @@ jobs:
             OS: macos-latest
             FEATURES: default
           - TARGET: i686-pc-windows-msvc # tested on a windows machine
-            OS: windows-2019
+            OS: windows-latest
             FEATURES: default
           - TARGET: x86_64-pc-windows-msvc # tested on a windows machine
             OS: windows-latest
