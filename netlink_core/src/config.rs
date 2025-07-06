@@ -58,10 +58,30 @@ pub struct Config {
     pub(crate) mtu: Option<u16>,
     pub(crate) udp_stun: Option<Vec<String>>,
     pub(crate) tcp_stun: Option<Vec<String>>,
-    pub(crate) kcp_for_all: Option<bool>,
+    pub(crate) kcp_policy: Option<KcpPolicy>,
     pub(crate) kcp_nodes: Option<Vec<Ipv4Addr>>,
     pub(crate) group_code_filter: Option<Vec<GroupCode>>,
     pub(crate) group_code_filter_regex: Option<Vec<String>>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KcpPolicy {
+    Always,
+    Never,
+    #[default]
+    Auto,
+}
+impl FromStr for KcpPolicy {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "always" => Ok(KcpPolicy::Always),
+            "never" => Ok(KcpPolicy::Never),
+            "auto" => Ok(KcpPolicy::Auto),
+            _ => Err("invalid KCP policy, expected 'always', 'never', or 'auto'"),
+        }
+    }
 }
 
 pub struct ConfigAttach {
@@ -125,7 +145,7 @@ pub struct ConfigBuilder {
     mtu: Option<u16>,
     udp_stun: Option<Vec<String>>,
     tcp_stun: Option<Vec<String>>,
-    kcp_for_all: Option<bool>,
+    kcp_policy: Option<KcpPolicy>,
     kcp_nodes: Option<Vec<Ipv4Addr>>,
     group_code_filter: Option<Vec<GroupCode>>,
     group_code_filter_regex: Option<Vec<String>>,
@@ -151,7 +171,7 @@ impl From<Config> for ConfigBuilder {
             .mtu(value.mtu)
             .udp_stun(value.udp_stun)
             .tcp_stun(value.tcp_stun)
-            .kcp_for_all(value.kcp_for_all)
+            .kcp_policy(value.kcp_policy)
             .kcp_nodes(value.kcp_nodes)
             .group_code_filter(value.group_code_filter)
             .group_code_filter_regex(value.group_code_filter_regex)
@@ -259,8 +279,8 @@ impl ConfigBuilder {
         self.tcp_stun = tcp_stun;
         self
     }
-    pub fn kcp_for_all(mut self, kcp_for_all: Option<bool>) -> Self {
-        self.kcp_for_all = kcp_for_all;
+    pub fn kcp_policy(mut self, kcp_policy: Option<KcpPolicy>) -> Self {
+        self.kcp_policy = kcp_policy;
         self
     }
     pub fn kcp_nodes(mut self, kcp_nodes: Option<Vec<Ipv4Addr>>) -> Self {
@@ -321,7 +341,7 @@ impl ConfigBuilder {
             mtu: Some(self.mtu.unwrap_or(MTU)),
             udp_stun: Some(self.udp_stun.unwrap_or(default_udp_stun())),
             tcp_stun: Some(self.tcp_stun.unwrap_or(default_tcp_stun())),
-            kcp_for_all: self.kcp_for_all,
+            kcp_policy: self.kcp_policy,
             kcp_nodes: self.kcp_nodes,
             group_code_filter: self.group_code_filter,
             group_code_filter_regex: self.group_code_filter_regex,

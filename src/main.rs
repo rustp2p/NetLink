@@ -7,7 +7,7 @@ use std::str::FromStr;
 use clap::Parser;
 use log::LevelFilter;
 
-use netlink_http::{Config, ConfigBuilder, HttpUserInfo, PeerAddress};
+use netlink_http::{Config, ConfigBuilder, HttpUserInfo, KcpPolicy, PeerAddress};
 
 use crate::config::FileConfigView;
 use crate::service::ApiService;
@@ -67,11 +67,9 @@ struct Args {
     /// Start using configuration file
     #[arg(short = 'f', long)]
     config: Option<String>,
-
-    /// Enable KCP for all peers.
+    /// KCP policy: always, never, or auto (default)
     #[arg(long)]
-    kcp_for_all: bool,
-
+    kcp_policy: Option<KcpPolicy>,
     /// Use KCP only for these peers (IPv4 list, e.g. --kcp-node 10.26.0.3 --kcp-node 10.26.0.4).
     #[arg(long = "kcp-node", value_name = "IPV4")]
     kcp_nodes: Option<Vec<Ipv4Addr>>,
@@ -239,7 +237,7 @@ async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
             password,
             mtu,
             filter,
-            kcp_for_all,
+            kcp_policy,
             kcp_nodes,
             ..
         } = args;
@@ -266,7 +264,7 @@ async fn main_by_cmd(args: Option<Args>) -> anyhow::Result<()> {
             .port(port)
             .peer(Some(peer))
             .bind_dev_name(bind_dev)
-            .kcp_for_all(Some(kcp_for_all))
+            .kcp_policy(kcp_policy)
             .kcp_nodes(kcp_nodes)
             .exit_node(exit_node)
             .mtu(mtu)

@@ -1,10 +1,10 @@
-use std::fmt::Debug;
-
 use anyhow::{anyhow, Context};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
+use std::net::Ipv4Addr;
 
-use netlink_http::{Config, ConfigBuilder};
+use netlink_http::{Config, ConfigBuilder, KcpPolicy};
 
 use crate::{DEFAULT_ALGORITHM, LISTEN_PORT};
 
@@ -33,6 +33,8 @@ pub struct FileConfigView {
     pub udp_stun: Option<Vec<String>>,
     pub tcp_stun: Option<Vec<String>>,
     pub group_code_filter: Option<Vec<String>>,
+    pub kcp_policy: Option<KcpPolicy>,
+    pub kcp_nodes: Option<Vec<Ipv4Addr>>,
     #[cfg(feature = "web")]
     pub username: Option<String>,
     #[cfg(feature = "web")]
@@ -98,12 +100,14 @@ impl TryFrom<FileConfigView> for Config {
             .config_name(Some("file_config".to_string()))
             .tun_name(value.tun_name)
             .bind_dev_name(value.bind_dev_name)
+            .kcp_policy(value.kcp_policy)
+            .kcp_nodes(value.kcp_nodes)
             .mtu(value.mtu)
             .group_code_filter_regex(group_code_filter_regex)
             .peer_str(value.peer)?;
 
         if let Some(exit_node) = value.exit_node {
-            builder = builder.exit_node(Some(exit_node.parse().context("node_ipv6 format error")?))
+            builder = builder.exit_node(Some(exit_node.parse().context("exit_node format error")?))
         }
 
         builder.build()
@@ -134,6 +138,8 @@ impl Default for FileConfigView {
             udp_stun: None,
             tcp_stun: None,
             group_code_filter: None,
+            kcp_policy: None,
+            kcp_nodes: None,
             username: None,
             password: None,
         }
